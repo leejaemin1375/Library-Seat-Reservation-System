@@ -19,19 +19,18 @@ users = {
 }
 
 rooms = {
-    1: {"name": "그룹스터디룸1", "capacity": 12, "min_people": 6},
-    2: {"name": "그룹스터디룸2", "capacity": 10, "min_people": 5},
-    3: {"name": "그룹스터디룸3", "capacity": 6, "min_people": 3},
-    4: {"name": "그룹스터디룸4", "capacity": 6, "min_people": 3},
-    5: {"name": "그룹스터디룸5", "capacity": 4, "min_people": 2},
-    6: {"name": "그룹스터디룸6", "capacity": 4, "min_people": 2},
-    7: {"name": "그룹스터디룸7", "capacity": 4, "min_people": 2},
-    8: {"name": "그룹스터디룸8", "capacity": 4, "min_people": 2},
-    9: {"name": "그룹스터디룸9", "capacity": 8, "min_people": 4},
-    10: {"name": "그룹스터디룸10", "capacity": 8, "min_people": 4},
-    11: {"name": "소회의실", "capacity": 20, "min_people": 10},
+    1: {"name": "그룹스터디룸1", "capacity": 12, "min_people": 6, "checkin_code": "A101"},
+    2: {"name": "그룹스터디룸2", "capacity": 10, "min_people": 5, "checkin_code": "A102"},
+    3: {"name": "그룹스터디룸3", "capacity": 6, "min_people": 3, "checkin_code": "A103"},
+    4: {"name": "그룹스터디룸4", "capacity": 6, "min_people": 3, "checkin_code": "A104"},
+    5: {"name": "그룹스터디룸5", "capacity": 4, "min_people": 2, "checkin_code": "A105"},
+    6: {"name": "그룹스터디룸6", "capacity": 4, "min_people": 2, "checkin_code": "A106"},
+    7: {"name": "그룹스터디룸7", "capacity": 4, "min_people": 2, "checkin_code": "A107"},
+    8: {"name": "그룹스터디룸8", "capacity": 4, "min_people": 2, "checkin_code": "A108"},
+    9: {"name": "그룹스터디룸9", "capacity": 8, "min_people": 4, "checkin_code": "A109"},
+    10: {"name": "그룹스터디룸10", "capacity": 8, "min_people": 4, "checkin_code": "A110"},
+    11: {"name": "소회의실", "capacity": 20, "min_people": 10, "checkin_code": "B201"},
 }
-
 time_slots = [f"{hour:02d}-{hour+1:02d}" for hour in range(9, 21)]
 
 # 오늘 날짜 기준 문자열
@@ -39,6 +38,7 @@ today = datetime.today().date()
 today_str = today.strftime("%Y-%m-%d")
 
 # 상황을 보여주기 위해 오늘 날짜에 미리 예약된 데이터
+# checked_in : False 이부분 체크인 안햇다는건데 솔직히 굳이 필요한지 모르겟어서 일단 보류
 reservations = [
     {
         "leader": "20240002",
@@ -47,6 +47,7 @@ reservations = [
         "room_id": 1,
         "time_slot": "09-10",
         "people_count": 6,
+        "checked_in": False,
     },
     {
         "leader": "20240003",
@@ -160,15 +161,103 @@ def is_past_time(date, time_slot):
 
     now = datetime.now()
 
+    # 오늘 날짜가 아니면 지난 시간 검사 안 함
     if selected_date != now.date():
         return False
 
     start_hour = int(time_slot.split("-")[0])
+    end_hour = int(time_slot.split("-")[1])
 
-    if start_hour <= now.hour:
+    end_time = datetime(
+        now.year,
+        now.month,
+        now.day,
+        end_hour,
+        0
+    )
+
+    # 종료 시간이 현재 시간보다 지났으면 마감
+    if now >= end_time:
         return True
 
     return False
+# 체크인 기능
+def check_in(reservation):
+    if reservation.get("checked_in") == True:
+        messagebox.showinfo("체크인", "이미 체크인 완료된 예약입니다.")
+        return
+
+    possible, msg = can_check_in(reservation)
+
+    if not possible:
+        messagebox.showerror("체크인 불가", msg)
+        return
+
+    room = rooms[reservation["room_id"]]
+
+    input_code = simpledialog.askstring(
+        "체크인 코드 입력",
+        f"{room['name']} 내부에 부착된 체크인 코드를 입력하세요."
+    )
+
+    if input_code is None:
+        return
+
+    if input_code == room["checkin_code"]:
+        reservation["checked_in"] = True
+        messagebox.showinfo("체크인 완료", "체크인이 완료되었습니다.")
+        show_my_reservation_screen()
+    else:
+        messagebox.showerror("체크인 실패", "체크인 코드가 일치하지 않습니다.")
+# 체크인 가능시간 검사
+def can_check_in(reservation):
+
+    now = datetime.now()
+
+    reservation_date = datetime.strptime(
+        reservation["date"],
+        "%Y-%m-%d"
+    ).date()
+
+    if reservation_date != now.date():
+        return False, "예약한 날짜에만 체크인할 수 있습니다."
+
+    start_hour = int(reservation["time_slot"].split("-")[0])
+    end_hour = int(reservation["time_slot"].split("-")[1])
+
+    start_time = datetime(
+        now.year,
+        now.month,
+        now.day,
+        start_hour,
+        0
+    )
+
+    end_time = datetime(
+        now.year,
+        now.month,
+        now.day,
+        end_hour,
+        0
+    )
+
+    if now < start_time:
+        return False, "아직 체크인 시간이 아닙니다."
+
+    if now >= end_time:
+        return False, "예약 시간이 종료되었습니다."
+
+    return True, "체크인 가능"
+# 방 내부 코드 확인
+def show_room_code(room_id):
+    room = rooms[room_id]
+
+    messagebox.showinfo(
+        "방 내부 체크인 코드",
+        f"{room['name']} 내부에 부착된 코드입니다.\n\n"
+        f"체크인 코드: {room['checkin_code']}"
+    )
+
 # 1. 날짜 선택 화면
 def show_date_screen():
     clear_screen()
@@ -190,7 +279,13 @@ def show_date_screen():
         text="예약할 날짜를 선택하세요.",
         font=("맑은 고딕", 15)
     ).pack(pady=20)
-
+    
+    tk.Button(
+        root,
+        text="내 예약 조회 / 취소 / 자리이동",
+        command=show_my_reservation_screen
+    ).pack(pady=30)
+    
     frame = tk.Frame(root)
     frame.pack(pady=10)
 
@@ -217,12 +312,6 @@ def show_date_screen():
         font=("맑은 고딕", 11),
         command=lambda: show_room_screen(date_entry.get().strip())
     ).pack(side="left")
-
-    tk.Button(
-        root,
-        text="전체 예약 목록 보기",
-        command=show_reservation_list_screen
-    ).pack(pady=30)
 
 
 # 2. 스터디룸 선택 화면
@@ -263,7 +352,6 @@ def show_room_screen(date):
     bottom.pack(pady=10)
 
     tk.Button(bottom, text="날짜 다시 선택", command=show_date_screen).pack(side="left", padx=10)
-    tk.Button(bottom, text="전체 예약 목록", command=show_reservation_list_screen).pack(side="left", padx=10)
 
 
 # 3. 시간 선택 화면
@@ -290,6 +378,13 @@ def show_time_screen(date, room_id):
     tk.Label(legend, text="가능", bg="#9be79b", width=10).pack(side="left", padx=5)
     tk.Label(legend, text="선택중", bg="#ffe680", width=10).pack(side="left", padx=5)
     tk.Label(legend, text="사용중", bg="#ff9fbd", width=10).pack(side="left", padx=5)
+
+    tk.Button(
+    root,
+    text="방 내부 코드 확인",
+    bg="#eeeeee",
+    command=lambda: show_room_code(room_id)
+    ).pack(pady=5)
 
     time_frame = tk.Frame(root)
     time_frame.pack(pady=15)
@@ -433,35 +528,233 @@ def reserve_room(date, room_id, time_slot):
 
     show_time_screen(date, room_id)
 
-
-# 5. 전체 예약 목록 화면
-def show_reservation_list_screen():
+def show_my_reservation_screen():
     clear_screen()
 
     tk.Label(
         root,
-        text="전체 예약 목록",
+        text="내 예약 조회 / 취소",
         font=("맑은 고딕", 20, "bold")
     ).pack(pady=20)
 
-    listbox = tk.Listbox(root, width=120, height=20, font=("맑은 고딕", 10))
-    listbox.pack(pady=10)
 
-    if len(reservations) == 0:
-        listbox.insert(tk.END, "예약 내역이 없습니다.")
+    my_reservations = []
+
+    for r in reservations:
+        if r["leader"] == current_user:
+            my_reservations.append(r)
+
+    if len(my_reservations) == 0:
+        tk.Label(
+            root,
+            text="현재 예약 내역이 없습니다.",
+            font=("맑은 고딕", 13)
+        ).pack(pady=20)
+
     else:
-        for r in reservations:
+        for index, r in enumerate(my_reservations):
             room_name = rooms[r["room_id"]]["name"]
             members = ", ".join(r["members"]) if r["members"] else "없음"
 
+            frame = tk.Frame(root, relief="solid", borderwidth=1)
+            frame.pack(pady=8, padx=20, fill="x")
+
+            checkin_status = "체크인 완료" if r.get("checked_in") else "체크인 전"
             text = (
-                f"{r['date']} / {room_name} / {r['time_slot']} / "
-                f"예약자: {r['leader']} / 팀원: {members} / 인원: {r['people_count']}명"
+                f"날짜: {r['date']} | 공간: {room_name} | 시간: {r['time_slot']}\n"
+                f"예약자: {r['leader']} | 팀원: {members} | 인원: {r['people_count']}명\n"
+                f"체크인 상태: {checkin_status}"
             )
-            listbox.insert(tk.END, text)
 
-    tk.Button(root, text="처음으로", command=show_date_screen).pack(pady=10)
+            tk.Label(
+                frame,
+                text=text,
+                font=("맑은 고딕", 11),
+                justify="left"
+            ).pack(side="left", padx=10, pady=10)
 
+            tk.Button(
+                frame,
+                text="예약 취소",
+                bg="#ffb3b3",
+                command=lambda reservation=r: cancel_reservation(reservation)
+            ).pack(side="right", padx=10)
+
+            tk.Button(
+                frame,
+                text="자리 이동",
+                bg="#b3d9ff",
+                command=lambda reservation=r: move_reservation_screen(reservation)
+            ).pack(side="right", padx=10)
+
+            tk.Button(
+                frame,
+                text="체크인",
+                bg="#c2f0c2",
+                command=lambda reservation=r: check_in(reservation)
+            ).pack(side="right", padx=10)
+    tk.Button(
+        root,
+        text="처음으로",
+        command=show_date_screen
+    ).pack(pady=20)
+def cancel_reservation(reservation):
+    answer = messagebox.askyesno(
+        "예약 취소",
+        "정말 예약을 취소하시겠습니까?"
+    )
+
+    if answer:
+        reservations.remove(reservation)
+        messagebox.showinfo("취소 완료", "예약이 취소되었습니다.")
+        show_my_reservation_screen()
+
+def move_reservation_screen(reservation):
+    clear_screen()
+
+    date = reservation["date"]
+    old_room_id = reservation["room_id"]
+    old_time_slot = reservation["time_slot"]
+
+    tk.Label(
+        root,
+        text="자리 이동",
+        font=("맑은 고딕", 20, "bold")
+    ).pack(pady=20)
+
+    tk.Label(
+        root,
+        text=f"현재 예약: {rooms[old_room_id]['name']} / {old_time_slot}",
+        font=("맑은 고딕", 13)
+    ).pack(pady=10)
+
+    tk.Label(
+        root,
+        text="이동할 스터디룸을 선택하세요.",
+        font=("맑은 고딕", 12)
+    ).pack(pady=10)
+
+    room_frame = tk.Frame(root)
+    room_frame.pack(pady=10)
+
+    for room_id, room in rooms.items():
+        tk.Button(
+            room_frame,
+            text=f"{room['name']}\n정원 {room['capacity']}명 / 최소 {room['min_people']}명",
+            width=24,
+            height=3,
+            bg="#d9eaff",
+            command=lambda r=room_id: move_time_screen(reservation, r)
+        ).grid(row=(room_id - 1) // 3, column=(room_id - 1) % 3, padx=10, pady=10)
+
+    tk.Button(
+        root,
+        text="뒤로가기",
+        command=show_my_reservation_screen
+    ).pack(pady=15)
+
+def move_time_screen(reservation, new_room_id):
+    clear_screen()
+
+    date = reservation["date"]
+    room = rooms[new_room_id]
+
+    tk.Label(
+        root,
+        text=f"{room['name']} 이동 가능 시간",
+        font=("맑은 고딕", 20, "bold")
+    ).pack(pady=15)
+
+    tk.Label(
+        root,
+        text=f"날짜: {date}    정원: {room['capacity']}명    최소인원: {room['min_people']}명",
+        font=("맑은 고딕", 13)
+    ).pack(pady=5)
+
+    time_frame = tk.Frame(root)
+    time_frame.pack(pady=15)
+
+    for index, slot in enumerate(time_slots):
+        if is_past_time(date, slot):
+            text = f"{slot}\n마감"
+            color = "#d3d3d3"
+            state = "disabled"
+
+        elif is_reserved(date, new_room_id, slot):
+            text = f"{slot}\n사용중"
+            color = "#ff9fbd"
+            state = "disabled"
+
+        elif is_locked(date, new_room_id, slot):
+            text = f"{slot}\n선택중"
+            color = "#ffe680"
+            state = "disabled"
+
+        else:
+            text = f"{slot}\n가능"
+            color = "#9be79b"
+            state = "normal"
+
+        tk.Button(
+            time_frame,
+            text=text,
+            width=12,
+            height=3,
+            bg=color,
+            state=state,
+            command=lambda s=slot: move_reservation(reservation, new_room_id, s)
+        ).grid(row=index // 4, column=index % 4, padx=8, pady=8)
+
+    tk.Button(
+        root,
+        text="뒤로가기",
+        command=lambda: move_reservation_screen(reservation)
+    ).pack(pady=15)   
+def move_reservation(reservation, new_room_id, new_time_slot):
+    date = reservation["date"]
+    new_room = rooms[new_room_id]
+
+    total_people = reservation["people_count"]
+
+    # 이동할 스터디룸의 최소 인원 검사
+    if total_people < new_room["min_people"]:
+        messagebox.showerror(
+            "이동 불가",
+            f"{new_room['name']}은 최소 {new_room['min_people']}명 이상이어야 합니다.\n"
+            f"현재 예약 인원: {total_people}명"
+        )
+        return
+
+    # 이동할 스터디룸의 정원 초과 검사
+    if total_people > new_room["capacity"]:
+        messagebox.showerror(
+            "이동 불가",
+            f"{new_room['name']}의 정원은 {new_room['capacity']}명입니다.\n"
+            f"현재 예약 인원: {total_people}명"
+        )
+        return
+
+    if is_reserved(date, new_room_id, new_time_slot):
+        messagebox.showerror("이동 불가", "이미 사용중인 시간입니다.")
+        return
+
+    if is_locked(date, new_room_id, new_time_slot):
+        messagebox.showerror("이동 불가", "다른 사용자가 선택중인 시간입니다.")
+        return
+
+    answer = messagebox.askyesno(
+        "자리 이동",
+        f"{new_room['name']} / {new_time_slot} 으로 이동하시겠습니까?"
+    )
+
+    if not answer:
+        return
+
+    reservation["room_id"] = new_room_id
+    reservation["time_slot"] = new_time_slot
+
+    messagebox.showinfo("이동 완료", "자리 이동이 완료되었습니다.")
+    show_my_reservation_screen()
 
 root = tk.Tk()
 root.title("스터디룸 예약 시스템")
