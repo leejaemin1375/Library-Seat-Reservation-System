@@ -2,9 +2,11 @@ import tkinter as tk
 import tkinter.messagebox as msgbox
 import json
 import os
+import threading
 from datetime import datetime, timedelta
 
 ROOMS_FILE = "reading_rooms.json"
+_lock = threading.RLock()  # 동시 접근 방지
 
 # 열람실 기본 정보
 ROOMS = [
@@ -22,20 +24,22 @@ STATUS_COLORS = {
 
 # ── JSON 불러오기 / 저장 ──────────────────────────────
 def load_rooms():
-    if os.path.exists(ROOMS_FILE):
-        with open(ROOMS_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                pass
-    # 파일 없거나 깨진 경우 기본값 생성
-    default = {r["name"]: {"total": r["total"], "reservations": {}} for r in ROOMS}
-    save_rooms(default)
-    return default
+    with _lock:
+        if os.path.exists(ROOMS_FILE):
+            with open(ROOMS_FILE, "r", encoding="utf-8") as f:
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    pass
+        # 파일 없거나 깨진 경우 기본값 생성
+        default = {r["name"]: {"total": r["total"], "reservations": {}} for r in ROOMS}
+        save_rooms(default)
+        return default
 
 def save_rooms(data):
-    with open(ROOMS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    with _lock:
+        with open(ROOMS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
 # ── 좌석 상태 판단 ────────────────────────────────────
 def get_seat_status(reservations, seat_num):
