@@ -123,10 +123,27 @@ class ReadingRoomPage(tk.Frame):
         for widget in [card] + card.winfo_children():
             widget.bind("<Button-1>", lambda e, r=room: self.show_seat_map(r))
 
+
     def show_seat_map(self, room):
         self._clear()
         self.selected_room = room
         reservations = load_rooms().get(room["name"], {})
+
+        # ★ [추가] 로그인한 사용자가 현재 어떤 열람실이든 이미 예약된 좌석이 있는지 체크합니다.
+        has_existing_reservation = False
+        all_reservations = load_rooms()
+        for r_n, seats in all_reservations.items():
+            for s_k, s_i in seats.items():
+                if s_i.get("user") == self.user:
+                    try:
+                        end_dt = datetime.strptime(s_i["end_time"], "%Y-%m-%d %H:%M")
+                        if datetime.now() < end_dt:
+                            has_existing_reservation = True
+                            break
+                    except (ValueError, KeyError):
+                        pass
+            if has_existing_reservation:
+                break
 
         tk.Label(self, text=f"🏛️ {room['name']} 실시간 도면 배치도", font=("맑은 고딕", 13, "bold")).pack(pady=10)
 
@@ -155,7 +172,14 @@ class ReadingRoomPage(tk.Frame):
                 color = STATUS_COLORS[status]
                 tooltip = reservations[str(i)]["end_time"].split()[-1] if status == 1 else str(i)
 
-                btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=color["bg"], fg=color["fg"],
+                # ★ [변경] 만약 배정가능(0)인데 이미 사용자가 예약이 있다면 '자리이동 선택(주황색)' 색상으로 변경
+                btn_bg = color["bg"]
+                btn_fg = color["fg"]
+                if status == 0 and has_existing_reservation:
+                    btn_bg = "#FF9800"  # 주황색 범위 지정 가능
+                    btn_fg = "white"
+
+                btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=btn_bg, fg=btn_fg,
                                 font=("Arial", 9, "bold"), relief="flat",
                                 command=lambda s=i, st=status: self.select_seat(s, st))
 
@@ -188,7 +212,14 @@ class ReadingRoomPage(tk.Frame):
                 color = STATUS_COLORS[status]
                 tooltip = reservations[str(i)]["end_time"].split()[-1] if status == 1 else str(i)
 
-                btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=color["bg"], fg=color["fg"],
+                # ★ [변경] 만약 배정가능(0)인데 이미 사용자가 예약이 있다면 '자리이동 선택' 색상으로 변경
+                btn_bg = color["bg"]
+                btn_fg = color["fg"]
+                if status == 0 and has_existing_reservation:
+                    btn_bg = "#FF9800"
+                    btn_fg = "white"
+
+                btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=btn_bg, fg=btn_fg,
                                 font=("Arial", 9, "bold"), relief="flat",
                                 command=lambda s=i, st=status: self.select_seat(s, st))
 
@@ -217,7 +248,14 @@ class ReadingRoomPage(tk.Frame):
                 color = STATUS_COLORS[status]
                 tooltip = reservations[str(i)]["end_time"].split()[-1] if status == 1 else str(i)
 
-                btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=color["bg"], fg=color["fg"],
+                # ★ [변경] 만약 배정가능(0)인데 이미 사용자가 예약이 있다면 '자리이동 선택' 색상으로 변경
+                btn_bg = color["bg"]
+                btn_fg = color["fg"]
+                if status == 0 and has_existing_reservation:
+                    btn_bg = "#FF9800"
+                    btn_fg = "white"
+
+                btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=btn_bg, fg=btn_fg,
                                 font=("Arial", 9, "bold"), relief="flat",
                                 command=lambda s=i, st=status: self.select_seat(s, st))
 
@@ -237,9 +275,18 @@ class ReadingRoomPage(tk.Frame):
         canvas.update_idletasks()
         canvas.configure(scrollregion=canvas.bbox("all"))
 
+        # ★ [변경] 범례 생성 프레임 영역 수정
         legend_frame = tk.Frame(self)
         legend_frame.pack(pady=8)
-        for text, color in [("배정가능", "#4CAF50"), ("사용중", "#9C27B0")]:
+        
+        # 기본 범례 리스트 구성
+        legends = [("배정가능", "#4CAF50"), ("사용중", "#9C27B0")]
+        
+        # 사용자가 이미 예약을 보유하고 있다면 범례에 '자리이동' 항목 추가
+        if has_existing_reservation:
+            legends.append(("자리이동", "#FF9800"))
+
+        for text, color in legends:
             tk.Label(legend_frame, bg=color, width=2, relief="flat").pack(side="left", padx=2)
             tk.Label(legend_frame, text=text, font=("맑은 고딕", 8)).pack(side="left", padx=(0, 10))
 
@@ -267,15 +314,21 @@ class ReadingRoomPage(tk.Frame):
             if msgbox.askyesno("예약 확인", f"{self.selected_room['name']} {seat_num}번 좌석을 예약하시겠습니까?"):
                 self.reserve(seat_num)
 
+    
     def move_seat(self, old_room, old_seat, new_seat, end_time):
         rooms_reservations = load_rooms()
         
+        # 1. 기존 좌석 삭제
         if old_room in rooms_reservations and old_seat in rooms_reservations[old_room]:
             del rooms_reservations[old_room][old_seat]
             
+        # 2. 새 좌석 저장 (booked_at 필수 추가!)
         new_room_name = self.selected_room["name"]
+        now_dt = datetime.now() # 자리이동한 시점을 새로운 예약 시작 시점으로 설정
+        
         rooms_reservations[new_room_name][str(new_seat)] = {
             "user": self.user,
+            "booked_at": now_dt.strftime("%Y-%m-%d %H:%M"), # ◀ 이 부분이 핵심 보완점입니다.
             "end_time": end_time,
             "checked_in": False
         }
@@ -284,6 +337,8 @@ class ReadingRoomPage(tk.Frame):
         msgbox.showinfo("좌석 이동 완료", f"성공적으로 좌석이 이동되었습니다!\n새 좌석: {new_room_name} [{new_seat}번]\n\n"
                                         f"※ 해당 자리 책상 위에 붙은 고유 인증코드를 "
                                         f"10분 내로 마이페이지에서 입력해야 예약이 자동 취소되지 않습니다.")
+        
+        # 3. 콜백 함수(on_back)를 호출하여 마이페이지로 이동하며 화면을 갱신합니다.
         self.on_back()
 
     # reading_room.py 복사용 주요 변경 로직
