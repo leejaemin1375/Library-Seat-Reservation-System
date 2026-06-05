@@ -6,7 +6,7 @@ import os
 
 # 각 모듈에서 필요한 페이지 및 함수 임포트
 from login_2 import LoginPage
-from reading_room import ReadingRoomPage, load_reading_rooms, save_reading_rooms
+from reading_room import ReadingRoomPage, load_reading_rooms, save_reading_rooms, get_rooms_config
 from study_room import StudyRoomPage, load_study_reservations, save_study_reservations, ROOMS as SR_ROOMS
 
 class MainApp(tk.Tk):
@@ -44,7 +44,7 @@ class MainApp(tk.Tk):
 
     def show_mypage(self):
         self.clear_frame()
-        self.geometry("520x680") # 요소가 늘어남에 따라 창 크기를 안정적으로 확장합니다.
+        self.geometry("520x680") # 창 크기 안정적 확장
         self.resizable(False, False)
 
         self.current_frame = tk.Frame(self, padx=20, pady=20)
@@ -75,7 +75,6 @@ class MainApp(tk.Tk):
             for seat_num, s_info in seats_map.items():
                 if s_info.get("user") == self.current_user:
                     if datetime.now() < datetime.strptime(s_info["end_time"], "%Y-%m-%d %H:%M"):
-                        # 이용 규칙(3시간)에 따라 종료 시간에서 3시간을 빼서 시작(입실) 시간을 계산합니다.
                         end_dt = datetime.strptime(s_info["end_time"], "%Y-%m-%d %H:%M")
                         start_dt = end_dt - timedelta(hours=3)
                         start_t_str = start_dt.strftime("%Y-%m-%d %H:%M")
@@ -87,11 +86,9 @@ class MainApp(tk.Tk):
         if rr_booked:
             room_n, seat_n, start_t, end_t, is_ci = rr_booked
             
-            # 레이아웃 깨짐을 방지하기 위해 입실 전용 대형 프레임 구성
             rr_frame = tk.Frame(status_box, bg="#f9f9f9", bd=1, relief="groove", padx=10, pady=8)
             rr_frame.pack(fill="x", pady=5)
             
-            # 정보 텍스트 영역 (좌측 배치)
             info_frame = tk.Frame(rr_frame, bg="#f9f9f9")
             info_frame.pack(side="left", fill="both", expand=True)
             
@@ -101,17 +98,12 @@ class MainApp(tk.Tk):
             tk.Label(info_frame, text=f"▶ 입실 시간: {start_t}", font=("맑은 고딕", 9), fg="#555", bg="#f9f9f9", anchor="w").pack(fill="x", pady=1)
             tk.Label(info_frame, text=f"▶ 종료 시간: {end_t}", font=("맑은 고딕", 9), fg="#555", bg="#f9f9f9", anchor="w").pack(fill="x", pady=1)
             
-            # 버튼 조작 영역 (우측 배치 및 정렬 겹침 방지)
             btn_frame = tk.Frame(rr_frame, bg="#f9f9f9")
             btn_frame.pack(side="right", fill="y", padx=(5, 0))
             
             tk.Button(btn_frame, text="반납", bg="#f44336", fg="white", font=("맑은 고딕", 9), width=8,
                       command=lambda: self.cancel_reading_room(room_n, seat_n)).pack(side="bottom", pady=2)
             
-            tk.Button(btn_frame, text="좌석 이동", bg="#FF9800", fg="white", font=("맑은 고딕", 9), width=8,
-                      command=lambda r_name=room_n: self.show_reading_room_for_move(r_name)).pack(side="bottom", pady=2)
-            
-            # 미인증 상태일 때 가장 위에 시인성이 높은 진분홍색(#e91e63) 인증코드 입력 버튼 배치
             if not is_ci:
                 tk.Button(btn_frame, text="코드 입력", bg="#e91e63", fg="white", font=("맑은 고딕", 9, "bold"), width=8,
                           command=lambda: self.checkin_reading_room(room_n, seat_n)).pack(side="bottom", pady=2)
@@ -121,7 +113,7 @@ class MainApp(tk.Tk):
         # 2. 스터디룸 현황 파싱
         tk.Label(status_box, text="■ 스터디룸 현황", font=("맑은 고딕", 10, "bold"), fg="#2196F3").pack(anchor="w", pady=(10, 2))
         current_sr_list = load_study_reservations()
-        sr_booked = [res for res in current_sr_list if res["leader"] == self.current_user or self.current_user in res["members"]]
+        sr_booked = [res for res in current_sr_list if str(res["leader"]) == str(self.current_user) or str(self.current_user) in [str(m) for m in res["members"]]]
 
         if sr_booked:
             sr_container = tk.Frame(status_box)
@@ -134,16 +126,13 @@ class MainApp(tk.Tk):
                 sr_info_frame.pack(side="left", fill="both", expand=True)
 
                 room_info = SR_ROOMS.get(int(res["room_id"]))
-                if room_info:
-                    room_name = room_info["name"]
-                else:
-                    room_name = f"알 수 없는 공간(ID: {res['room_id']})"
+                room_name = room_info["name"] if room_info else f"알 수 없는 공간(ID: {res['room_id']})"
 
                 ci_status = " [입실완료]" if res.get("checked_in", False) else " [미입실]"
-                role_txt = "[방장]" if res["leader"] == self.current_user else f"[팀원]"
+                role_txt = "[방장]" if str(res["leader"]) == str(self.current_user) else f"[팀원]"
                 
                 tk.Label(sr_info_frame, text=f"{room_name}{ci_status} ({role_txt})", font=("맑은 고딕", 9, "bold"), bg="#f9f9f9", anchor="w").pack(fill="x")
-                tk.Label(sr_info_frame, text=f"▶ 예약 일시: {res['date']}시 ({res['time_slot']}시)", font=("맑은 고딕", 9), fg="#555", bg="#f9f9f9", anchor="w").pack(fill="x")
+                tk.Label(sr_info_frame, text=f"▶ 예약 일시: {res['date']} ({res['time_slot']})", font=("맑은 고딕", 9), fg="#555", bg="#f9f9f9", anchor="w").pack(fill="x")
                 
                 sr_btn_frame = tk.Frame(sr_frame, bg="#f9f9f9")
                 sr_btn_frame.pack(side="right", fill="y")
@@ -151,7 +140,7 @@ class MainApp(tk.Tk):
                 tk.Button(sr_btn_frame, text="취소", bg="#f44336", fg="white", font=("맑은 고딕", 8), width=8,
                           command=lambda r=res: self.cancel_study_room(r)).pack(side="bottom", pady=1)
                 
-                if not res.get("checked_in", False) and res["leader"] == self.current_user:
+                if not res.get("checked_in", False) and str(res["leader"]) == str(self.current_user):
                     tk.Button(sr_btn_frame, text="코드 입력", bg="#e91e63", fg="white", font=("맑은 고딕", 8, "bold"), width=8,
                               command=lambda r=res: self.checkin_study_room(r)).pack(side="bottom", pady=1)
         else:
@@ -169,15 +158,33 @@ class MainApp(tk.Tk):
         self.current_frame = StudyRoomPage(self, self.current_user, on_back=self.show_mypage)
         self.current_frame.pack(fill="both", expand=True)
 
-    # ----------------- [열람실 제어 로직] -----------------
+    # ----------------- [열람실 제어 로직 수정] -----------------
+    # main.py 파일 내의 기존 checkin_reading_room 함수를 이 코드로 덮어쓰기 하세요.
     def checkin_reading_room(self, room_name, seat_num):
-        """열람실 좌석 착석 인증 수행"""
-        rr_data = load_reading_rooms()
-        if room_name in rr_data and seat_num in rr_data[room_name]:
-            rr_data[room_name][seat_num]["checked_in"] = True
-            save_reading_rooms(rr_data)
-            messagebox.showinfo("인증 성공", f"[{room_name}] {seat_num}번 좌석 착석 인증이 완료되었습니다.")
-            self.show_mypage()
+        """열람실 좌석 실제 물리 코드 검증 후 착석 인증 수행"""
+        # 1. reading_room.py에 저장된 실제 방 설정 구조(get_rooms_config)를 가져옵니다.
+        try:
+            rooms_config = get_rooms_config()
+            # 해당 열람실의 좌석 번호에 매핑된 고유 코드(예: "R1-S14")를 정확히 추출합니다.
+            correct_code = rooms_config[room_name]["seats"][str(seat_num)]
+        except Exception:
+            # 예외 발생 시 하위 호환성을 위한 백업 기본값 유지
+            auth_code_map = {"열람실1": "R1", "열람실2": "R2", "열람실3": "R3"}
+            correct_code = auth_code_map.get(room_name, "1234")
+
+        # 2. 사용자 입력 창 띄우기
+        code = simpledialog.askstring("좌석 인증", f"[{room_name} {seat_num}번] 책상 표면에 부착된 인증 코드를 입력하세요.")
+        
+        # 3. 공백 및 대소문자 구분 없이 정확하게 매칭 검증
+        if code and code.strip().upper() == correct_code.upper():
+            rr_data = load_reading_rooms()
+            if room_name in rr_data and str(seat_num) in rr_data[room_name]:
+                rr_data[room_name][str(seat_num)]["checked_in"] = True
+                save_reading_rooms(rr_data)
+                messagebox.showinfo("인증 성공", f"[{room_name}] {seat_num}번 좌석 착석 인증이 완료되었습니다.")
+                self.show_mypage()
+        elif code is not None:
+            messagebox.showerror("인증 실패", f"코드가 올바르지 않습니다.\n입력하신 코드: {code}\n(힌트: 대소문자와 하이픈(-)을 확인하세요.)")
 
     def cancel_reading_room(self, room_name, seat_num):
         """열람실 좌석 조기 반납"""
@@ -191,7 +198,6 @@ class MainApp(tk.Tk):
 
     # ----------------- [스터디룸 제어 로직] -----------------
     def checkin_study_room(self, reservation):
-        """마이페이지 대시보드 내에서 스터디룸 문/벽면 벽체 코드 인증 핸들러"""
         room_id = int(reservation["room_id"])
         room_info = SR_ROOMS.get(room_id)
         if not room_info:
@@ -201,8 +207,8 @@ class MainApp(tk.Tk):
         if code and code.strip().upper() == room_info["checkin_code"].upper():
             sr_data = load_study_reservations()
             for r in sr_data:
-                if (r["leader"] == reservation["leader"] and r["date"] == reservation["date"] and 
-                    r["room_id"] == reservation["room_id"] and r["time_slot"] == reservation["time_slot"]):
+                if (str(r["leader"]) == str(reservation["leader"]) and r["date"] == reservation["date"] and 
+                    int(r["room_id"]) == int(reservation["room_id"]) and r["time_slot"] == reservation["time_slot"]):
                     r["checked_in"] = True
                     break
             save_study_reservations(sr_data)
@@ -212,14 +218,13 @@ class MainApp(tk.Tk):
             messagebox.showerror("인증 실패", "코드가 올바르지 않습니다. 다시 확인해 주세요.")
 
     def cancel_study_room(self, reservation):
-        """마이페이지 대시보드 내에서 스터디룸 예약 취소"""
         if messagebox.askyesno("예약 취소", "스터디룸 예약을 취소하시겠습니까?"):
             sr_data = load_study_reservations()
             updated = [
                 r for r in sr_data if not (
-                    r["leader"] == reservation["leader"] and 
+                    str(r["leader"]) == str(reservation["leader"]) and 
                     r["date"] == reservation["date"] and 
-                    r["room_id"] == reservation["room_id"] and 
+                    int(r["room_id"]) == int(reservation["room_id"]) and 
                     r["time_slot"] == reservation["time_slot"]
                 )
             ]
@@ -227,24 +232,19 @@ class MainApp(tk.Tk):
             messagebox.showinfo("취소 성공", "예약이 정상적으로 취소되었습니다.")
             self.show_mypage()
 
-    # ----------------- [백그라운드 노쇼 자동 취소 엔진] -----------------
+    # ----------------- [백그라운드 엔진 버그 수정] -----------------
     def auto_cancel_no_show(self):
-        """
-        1초마다 실행되며 예약 시작 시간 10분이 지나도록 
-        체크인(checked_in) 하지 않은 열람실 및 당일 스터디룸 예약을 무한 루프 없이 자동 취소합니다.
-        """
         now = datetime.now()
         rr_changed = False
         sr_changed = False
 
-        # 1. 열람실 노쇼 자동 회수 (종료시간 기점 또는 시작 기점 로직 적용 가능)
+        # 1. 열람실 세션 종료 감지
         try:
             rr_data = load_reading_rooms()
             for room_name, seats_map in rr_data.items():
                 expired = [
                     seat_num for seat_num, s_info in seats_map.items()
-                    if s_info.get("end_time") and
-                    now > datetime.strptime(s_info["end_time"], "%Y-%m-%d %H:%M")
+                    if s_info.get("end_time") and now > datetime.strptime(s_info["end_time"], "%Y-%m-%d %H:%M")
                 ]
                 for seat_num in expired:
                     del rr_data[room_name][seat_num]
@@ -252,37 +252,33 @@ class MainApp(tk.Tk):
             if rr_changed:
                 save_reading_rooms(rr_data)
         except Exception as e:
-            print(f"열람실 실시간 스캔 에러: {e}")
+            pass
 
-        # 2. 스터디룸 노쇼 자동 회수 (날짜 조건 오류 완벽 해결)
+        # 2. 스터디룸 실시간 노쇼 취소 로직 정밀화
         try:
             sr_data = load_study_reservations()
             updated_sr = []
             for res in sr_data:
-                # 9-10 형식에서 시작 시간인 앞쪽 시간(9) 추출
-                start_hour = int(res["time_slot"].split("-")[0])
-                # 예약 데이터의 날짜와 시작 시간을 결합하여 타임스탬프 객체 생성
-                start_dt = datetime.strptime(f"{res['date']} {start_hour:02d}:00", "%Y-%m-%d %H:%M")
-
-                # [버그 수정 완료] 오늘 날짜 이면서 시작한 지 10분이 넘었는데 미착석(미체크인)인 경우 -> 노쇼 대상 (제외)
-                if now > (start_dt + timedelta(minutes=10)) and not res.get("checked_in", False):
-                    sr_changed = True
-                    continue # 삭제(회수) 대상이므로 updated_sr에 보존하지 않음
-                
+                try:
+                    start_hour = int(res["time_slot"].split("-")[0])
+                    start_dt = datetime.strptime(f"{res['date']} {start_hour:02d}:00", "%Y-%m-%d %H:%M")
+                    # 예약 시간 기준 10분이 넘었고 미입실 상태면 삭제(노쇼 취소)
+                    if now > (start_dt + timedelta(minutes=10)) and not res.get("checked_in", False):
+                        sr_changed = True
+                        continue
+                except:
+                    pass
                 updated_sr.append(res)
 
             if sr_changed:
                 save_study_reservations(updated_sr)
         except Exception as e:
-            print(f"스터디룸 실시간 노쇼 스캔 에러: {e}")
+            pass
 
-        # 데이터가 실제로 변경되었을 때, 사용자가 마이페이지를 보고 있다면 무한 루프 없이 단 1회 화면 갱신
+        # 마이페이지 활성화 상태일 때만 리프레시 수행해서 깜빡임 및 무한 루프 차단
         if (rr_changed or sr_changed) and hasattr(self, 'current_frame') and type(self.current_frame) is tk.Frame:
-            # 현재 떠 있는 프레임의 타이틀 등을 체크하여 마이페이지 활성화 상태일 때만 리프레시 수행
-            # 무한 대시보드 리로드 현상을 막기 위해 체크 구조 유지
             self.show_mypage()
 
-        # 1초 뒤 재귀 호출
         self.after(1000, self.auto_cancel_no_show)
 
 if __name__ == "__main__":
