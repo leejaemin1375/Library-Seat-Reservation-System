@@ -286,14 +286,17 @@ class ReadingRoomPage(tk.Frame):
                                         f"10분 내로 마이페이지에서 입력해야 예약이 자동 취소되지 않습니다.")
         self.on_back()
 
+    # reading_room.py 복사용 주요 변경 로직
     def reserve(self, seat_num):
         rooms_reservations = load_rooms()
         room_name = self.selected_room["name"]
         seat_key = str(seat_num)
 
-        end_dt = datetime.now() + timedelta(hours=3)
+        now_dt = datetime.now()
+        end_dt = now_dt + timedelta(hours=3)
         rooms_reservations[room_name][seat_key] = {
             "user": self.user, 
+            "booked_at": now_dt.strftime("%Y-%m-%d %H:%M"), # 예약 시작 시간 기록
             "end_time": end_dt.strftime("%Y-%m-%d %H:%M"),
             "checked_in": False
         }
@@ -301,8 +304,9 @@ class ReadingRoomPage(tk.Frame):
 
         msgbox.showinfo("예약 완료", f"성공적으로 예약되었습니다.\n종료 시간: {end_dt.strftime('%H:%M')}\n\n"
                                     f"※ [노쇼 방지 실시간 안내]\n배정된 자리 책상 표면에 부착된 물리 코드를 "
-                                    f"10분 이내에 마이페이지에서 인증해야 최종 승인됩니다.")
+                                    f"지금부터 10분 이내에 마이페이지에서 인증해야 패널티가 부여되지 않습니다.")
         self.on_back()
+
 
 def get_seat_status(reservations, seat_num):
     seat_key = str(seat_num)

@@ -220,24 +220,45 @@ class StudyRoomPage(tk.Frame):
             self.remove_lock(date, room_id, time_slot)
             return
 
-        # ---------------- [2. 회원가입 여부 검증 로직] ----------------
-        from login_2 import load_users  # 사용자 목록을 로드하기 위해 임포트
-        existing_users = load_users()   # users.json에서 등록된 회원 목록 가져옴
+        # ---------------- [팀원 가입 여부 & 패널티 누적 정지 상태 통합 검증 로직] ----------------
+        from login_2 import load_users  
+        from main import is_user_banned, load_penalties
+        existing_users = load_users()   
         
         invalid_members = []
+        banned_members = []
+        
         for m in members:
             if m not in existing_users:
                 invalid_members.append(m)
+            else:
+                # 가입된 유저라면 패널티 정지 기간 상태 체크
+                banned, until = is_user_banned(m)
+                if banned:
+                    banned_members.append(f"{m}(~{until}까지 정지)")
+                else:
+                    # 블랙리스트 파일 직접 교차 검증 (3회 이상인 경우 상시 차단)
+                    p_info = load_penalties().get(m, {"count": 0})
+                    if p_info["count"] >= 3:
+                        banned_members.append(f"{m}(패널티 3회 누적인원)")
                 
         if invalid_members:
             messagebox.showerror(
                 "예약 불가", 
-                f"등록되지 않은 사용자가 포함되어 있습니다.\n"
-                f"미가입 학번: {', '.join(invalid_members)}\n\n"
-                f"해당 팀원이 먼저 회원가입을 진행해야 합니다."
+                f"등록되지 않은 사용자가 포함되어 있습니다.\n미가입 학번: {', '.join(invalid_members)}"
             )
             self.remove_lock(date, room_id, time_slot)
             return
+
+        if banned_members:
+            messagebox.showerror(
+                "팀원 참여 불가", 
+                f"패널티 제한 규정으로 인해 팀원으로 동반 입실할 수 없는 학번이 포함되어 있습니다.\n\n"
+                f"대상자:\n- {BaseException}\n{chr(10).join(banned_members)}\n\n해당 명단을 제외하고 다시 신청해 주세요."
+            )
+            self.remove_lock(date, room_id, time_slot)
+            return
+        # -----------------------------------------------------------------------------------------
         # ----------------------------------------------------------------
 
         total_people = len(members) + 1
