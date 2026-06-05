@@ -37,13 +37,13 @@ def load_rooms_config():
 
 ROOMS = load_rooms_config()
 TIME_SLOTS = [f"{hour:02d}:00-{(hour+1):02d}:00" for hour in range(9, 21)]
-TEMP_LOCKS = []
 
 class StudyRoomPage(tk.Frame):
     def __init__(self, master, user, on_back):
         super().__init__(master)
         self.user = user
         self.on_back = on_back
+        self.selected_slots = [] # ★ 사용자가 마우스로 클릭클릭한 임시 선택 시간대 리스트
         self.show_date_screen()
 
     def clear_screen(self):
@@ -54,45 +54,31 @@ class StudyRoomPage(tk.Frame):
         reservations = load_study_reservations()
         return any(r["date"] == date and int(r["room_id"]) == int(room_id) and r["time_slot"] == time_slot for r in reservations)
 
-    def is_locked(self, date, room_id, time_slot):
-        return any(lock["date"] == date and int(lock["room_id"]) == int(room_id) and lock["time_slot"] == time_slot for lock in TEMP_LOCKS)
-
-    def add_lock(self, date, room_id, time_slot):
-        TEMP_LOCKS.append({"date": date, "room_id": room_id, "time_slot": time_slot, "user": self.user})
-
-    def remove_lock(self, date, room_id, time_slot):
-        for lock in TEMP_LOCKS:
-            if lock["date"] == date and int(lock["room_id"]) == int(room_id) and lock["time_slot"] == time_slot and lock["user"] == self.user:
-                TEMP_LOCKS.remove(lock)
-                return
-
     def is_past_time(self, date, time_slot):
         try:
             selected_date = datetime.strptime(date, "%Y-%m-%d").date()
             now = datetime.now()
             
-            # 선택한 날짜가 오늘보다 과거라면 무조건 True (마감)
             if selected_date < now.date():
                 return True
-            # 선택한 날짜가 미래(내일 이후)라면 무조건 False (예약 가능)
             if selected_date > now.date():
                 return False
 
             start_hour = int(time_slot.split("-")[0].split(":")[0])
             start_time = datetime(now.year, now.month, now.day, start_hour, 0)
             
-            # 현재 시간이 타임슬롯 시작 시간 정각이거나 그 이후라면 True(지나간 시간) 반환
             return now >= start_time
         except Exception:
             return True
 
     def show_date_screen(self):
         self.clear_screen()
+        self.selected_slots = [] # 화면 초기화 시 선택 정보 초기화
         tk.Label(self, text="스터디룸 예약 시스템", font=("맑은 고딕", 22, "bold")).pack(pady=25)
         tk.Label(self, text=f"현재 로그인 사용자: {self.user}", font=("맑은 고딕", 12)).pack(pady=5)
         tk.Label(self, text="예약할 날짜를 선택하세요.", font=("맑은 고딕", 15)).pack(pady=20)
         
-        tk.Button(self, text="내 예약 조회 / 취소 / 자리이동", command=self.show_my_reservation_screen).pack(pady=15)
+        tk.Button(self, text="내 예약 조회 / 취소", command=self.show_my_reservation_screen).pack(pady=15)
         
         frame = tk.Frame(self)
         frame.pack(pady=10)
@@ -111,6 +97,7 @@ class StudyRoomPage(tk.Frame):
             messagebox.showwarning("입력 오류", "날짜를 입력하세요.")
             return
         self.clear_screen()
+        self.selected_slots = [] # 화면 초기화 시 선택 정보 초기화
         tk.Label(self, text=f"{date} 예약할 공간 선택", font=("맑은 고딕", 20, "bold")).pack(pady=20)
 
         canvas_frame = tk.Frame(self)
@@ -136,7 +123,6 @@ class StudyRoomPage(tk.Frame):
         bottom = tk.Frame(self)
         bottom.pack(pady=15)
         tk.Button(bottom, text="날짜 다시 선택", command=self.show_date_screen).pack(side="left", padx=10)
-        # 4번 요구사항: 공간 선택 화면 뒤로가기 버튼 추가
         tk.Button(bottom, text="메인메뉴로", command=self.on_back).pack(side="left", padx=10)
 
     def show_time_screen(self, date, room_id):
@@ -145,6 +131,10 @@ class StudyRoomPage(tk.Frame):
 
         tk.Label(self, text=f"{room['name']} 예약 가능 시간", font=("맑은 고딕", 20, "bold")).pack(pady=15)
         tk.Label(self, text=f"날짜: {date}  |  정원: {room['capacity']}명  |  최소인원: {room['min_people']}명", font=("맑은 고딕", 11)).pack(pady=5)
+        
+        # 안내 문구 상단에 노출
+        tk.Label(self, text="※ 원하는 시간대 버튼을 클릭클릭하여 연속 최대 3시간까지 지정한 후 하단 [예약하기] 버튼을 누르세요.", 
+                 font=("맑은 고딕", 10, "bold"), fg="#E53935").pack(pady=3)
 
         legend = tk.Frame(self)
         legend.pack(pady=5)
@@ -156,71 +146,92 @@ class StudyRoomPage(tk.Frame):
         time_frame.pack(pady=15)
 
         for index, slot in enumerate(TIME_SLOTS):
-            if self.is_past_time(date, slot):
+            is_chosen = slot in self.selected_slots
+
+            if self.is_past_time(date, room_id, slot) if 'room_id' in self.is_past_time.__code__.co_varnames else self.is_past_time(date, slot):
                 text, color, state = f"{slot}\n마감", "#d3d3d3", "disabled"
             elif self.is_reserved(date, room_id, slot):
                 text, color, state = f"{slot}\n사용중", "#ff9fbd", "disabled"
-            elif self.is_locked(date, room_id, slot):
-                text, color, state = f"{slot}\n선택중", "#ffe680", "disabled"
+            elif is_chosen:
+                text, color, state = f"{slot}\n선택중", "#ffe680", "normal"
             else:
                 text, color, state = f"{slot}\n가능", "#9be79b", "normal"
 
-            tk.Button(time_frame, text=text, width=13, height=2, bg=color, state=state,
-                      command=lambda s=slot: self.reserve_room(date, room_id, s)).grid(row=index // 4, column=index % 4, padx=6, pady=6)
+            btn = tk.Button(time_frame, text=text, width=13, height=2, bg=color, state=state)
+            btn.config(command=lambda s=slot, b=btn: self.reserve_room(date, room_id, s, b))
+            btn.grid(row=index // 4, column=index % 4, padx=6, pady=6)
 
         bottom = tk.Frame(self)
         bottom.pack(pady=10)
+        
+        # ★ 하단에 일괄 처리를 수행할 예약 확정 실행 버튼 생성
+        tk.Button(bottom, text="✅ 선택한 시간 최종 예약하기", font=("맑은 고딕", 11, "bold"), bg="#4CAF50", fg="white", padx=12,
+                  command=lambda: self.process_final_reservation(date, room_id)).pack(side="left", padx=10)
+
         tk.Button(bottom, text="공간 다시 선택", command=lambda: self.show_room_screen(date)).pack(side="left", padx=10)
         tk.Button(bottom, text="날짜 다시 선택", command=self.show_date_screen).pack(side="left", padx=10)
-        # 4번 요구사항: 시간 선택 화면 뒤로가기 버튼 추가
         tk.Button(bottom, text="메인메뉴로", command=self.on_back).pack(side="left", padx=10)
 
-    def reserve_room(self, date, room_id, time_slot):
-        # ---------------- [1. 당일 지나간 시간 예약 차단 로직] ----------------
-        from datetime import datetime
-        
-        now = datetime.now()
-        current_date_str = now.strftime("%Y-%m-%d") # 예: "2026-06-05"
-        
-        # 사용자가 선택한 예약일이 오늘인 경우에만 검사
-        if date == current_date_str:
-            try:
-                # 소스코드 내 TIME_SLOTS 형식인 "HH:00-HH:00"에서 시작 시간 추출
-                start_time_str = time_slot.split("-")[0].strip() # 예: "19:00"
-                start_hour, start_minute = map(int, start_time_str.split(":"))
+    def reserve_room(self, date, room_id, time_slot, button):
+        """시간 슬롯 버튼을 눌렀을 때 팝업창을 생략하고 즉시 리스트에 주황색('선택중')으로 담아내는 함수"""
+        if time_slot in self.selected_slots:
+            # 이미 선택된 목록을 다시 누르면 -> 토글식 선택 해제 처리
+            self.selected_slots.remove(time_slot)
+            button.config(bg="#9be79b", text=f"{time_slot}\n가능")
+        else:
+            # 1. 최대 연속 3시간 제약 규정 예외처리 검사
+            if len(self.selected_slots) >= 3:
+                messagebox.showwarning("선택 제한", "스터디룸은 1회 예약 시 최대 연속 3시간까지만 선택하실 수 있습니다.")
+                return
                 
-                # 오늘 해당 타임슬롯의 시작 시간 객체 생성
-                slot_start_datetime = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+            # 2. 중간에 빈 시간이 끊어지지 않도록 가로채기 검증
+            if self.selected_slots:
+                existing_hours = sorted([int(s.split(":")[0]) for s in self.selected_slots])
+                current_hour = int(time_slot.split(":")[0])
                 
-                # 현재 시간이 타임슬롯 시작 시간과 같거나 이미 지났다면 즉시 차단
-                if now >= slot_start_datetime:
-                    messagebox.showerror("예약 불가", "이미 시작되었거나 지나간 시간대의 타임슬롯은 예약할 수 없습니다.")
+                if current_hour != existing_hours[0] - 1 and current_hour != existing_hours[-1] + 1:
+                    messagebox.showwarning("선택 오류", "예약 시간은 중간에 공백 없이 연속된 시간대로만 선택하셔야 합니다.")
                     return
-            except Exception as e:
-                print(f"시간 파싱 오류: {e}")
-        # -----------------------------------------------------------------------
 
-        room = ROOMS[room_id]
-        if self.is_reserved(date, room_id, time_slot) or self.is_locked(date, room_id, time_slot):
-            messagebox.showerror("예약 불가", "신청할 수 없는 시간대입니다.")
+            # 임시 배열 저장 및 UI 피드백 반영
+            self.selected_slots.append(time_slot)
+            button.config(bg="#ffe680", text=f"{time_slot}\n선택중")
+
+    def process_final_reservation(self, date, room_id):
+        """[선택한 시간 최종 예약하기] 버튼을 누를 시 실행되어 팀원을 입력받고 일괄 기록하는 동기화 메인 로직"""
+        if not self.selected_slots:
+            messagebox.showwarning("선택 오류", "선택된 시간이 없습니다.\n원하는 시간 버튼을 먼저 한 개 이상 클릭해 주세요.")
             return
 
-        self.add_lock(date, room_id, time_slot)
+        # 당일 지난 타임 차단 예외처리
+        now = datetime.now()
+        current_date_str = now.strftime("%Y-%m-%d")
+        if date == current_date_str:
+            try:
+                sorted_slots = sorted(self.selected_slots)
+                start_time_str = sorted_slots[0].split("-")[0].strip()
+                start_hour, start_minute = map(int, start_time_str.split(":"))
+                slot_start_datetime = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+                if now >= slot_start_datetime:
+                    messagebox.showerror("예약 불가", "선택 항목 중 이미 시작되었거나 지나간 시간대가 포함되어 있어 처리가 불가능합니다.")
+                    return
+            except Exception as e:
+                print(f"시간 동기화 파싱 오류: {e}")
+
+        room = ROOMS[room_id]
         
+        # 다중 클릭이 정상 완료된 뒤에 비로소 팀원 학번 입력 창 유도
         member_input = simpledialog.askstring("팀원 학번 입력", f"본인({self.user}) 외 팀원 학번을 쉼표(,)로 구분하여 입력하세요.")
         if member_input is None:
-            self.remove_lock(date, room_id, time_slot)
-            self.show_time_screen(date, room_id)
             return
 
         members = [m.strip() for m in member_input.split(",")] if member_input.strip() else []
         
         if str(self.user) in members:
             messagebox.showerror("입력 오류", "본인 학번은 자동으로 포함됩니다.")
-            self.remove_lock(date, room_id, time_slot)
             return
 
-        # ---------------- [팀원 가입 여부 & 패널티 누적 정지 상태 통합 검증 로직] ----------------
+        # [팀원 가입 및 패널티 제재 상태 실시간 통합 교차 검증]
         from login_2 import load_users  
         from main import is_user_banned, load_penalties
         existing_users = load_users()   
@@ -232,61 +243,61 @@ class StudyRoomPage(tk.Frame):
             if m not in existing_users:
                 invalid_members.append(m)
             else:
-                # 가입된 유저라면 패널티 정지 기간 상태 체크
                 banned, until = is_user_banned(m)
                 if banned:
                     banned_members.append(f"{m}(~{until}까지 정지)")
                 else:
-                    # 블랙리스트 파일 직접 교차 검증 (3회 이상인 경우 상시 차단)
                     p_info = load_penalties().get(m, {"count": 0})
                     if p_info["count"] >= 3:
                         banned_members.append(f"{m}(패널티 3회 누적인원)")
                 
         if invalid_members:
-            messagebox.showerror(
-                "예약 불가", 
-                f"등록되지 않은 사용자가 포함되어 있습니다.\n미가입 학번: {', '.join(invalid_members)}"
-            )
-            self.remove_lock(date, room_id, time_slot)
+            messagebox.showerror("예약 불가", f"등록되지 않은 사용자가 포함되어 있습니다.\n미가입 학번: {', '.join(invalid_members)}")
             return
 
         if banned_members:
-            messagebox.showerror(
-                "팀원 참여 불가", 
-                f"패널티 제한 규정으로 인해 팀원으로 동반 입실할 수 없는 학번이 포함되어 있습니다.\n\n"
-                f"대상자:\n- {BaseException}\n{chr(10).join(banned_members)}\n\n해당 명단을 제외하고 다시 신청해 주세요."
-            )
-            self.remove_lock(date, room_id, time_slot)
+            messagebox.showerror("팀원 참여 불가", f"패널티 제한 규정으로 인해 팀원으로 입실할 수 없는 학번이 포함되어 있습니다.\n\n대상자:\n{chr(10).join(banned_members)}")
             return
-        # -----------------------------------------------------------------------------------------
-        # ----------------------------------------------------------------
 
         total_people = len(members) + 1
         if total_people < room["min_people"] or total_people > room["capacity"]:
             messagebox.showerror("예약 불가", f"인원 조건 미달 또는 초과 (최소: {room['min_people']}, 최대: {room['capacity']})")
-            self.remove_lock(date, room_id, time_slot)
             return
 
         reservations = load_study_reservations()
-        reservations.append({
-            "leader": str(self.user), 
-            "members": members, 
-            "date": date, 
-            "room_id": int(room_id), 
-            "time_slot": time_slot, 
-            "people_count": total_people, 
-            "checked_in": False
-        })
+        
+        # 데이터 정합성 보장을 위한 선점 여부 파이널 더블 체크
+        for slot in self.selected_slots:
+            if self.is_reserved(date, room_id, slot):
+                messagebox.showerror("예약 실패", f"처리 도중 {slot} 시간대가 이미 타인에게 먼저 선점되었습니다.")
+                self.selected_slots = []
+                self.show_time_screen(date, room_id)
+                return
+
+        # 선택했던 슬롯들을 하나씩 순회하며 배열에 모두 추가
+        for slot in self.selected_slots:
+            reservations.append({
+                "leader": str(self.user), 
+                "members": members, 
+                "date": date, 
+                "room_id": int(room_id), 
+                "time_slot": slot, 
+                "people_count": total_people, 
+                "checked_in": False
+            })
+            
         save_study_reservations(reservations)
-        self.remove_lock(date, room_id, time_slot)
         
         messagebox.showinfo(
             "예약 완료", 
-            "정상적으로 예약되었습니다.\n\n"
+            f"선택하신 총 {len(self.selected_slots)}시간 연속 예약이 정상적으로 완료되었습니다.\n\n"
             "※ [노쇼 방지 필수 안내]\n"
-            "예약 시작 시간 전후 10분 이내에 해당 스터디룸 출입문 및 벽면에 부착된 "
-            "실제 인증 코드를 마이페이지에서 정확히 등록해야 입실 처리됩니다."
+            "매 예약 시작 시간 전후 10분 이내에 해당 스터디룸 벽면에 부착된 "
+            "인증 코드를 마이페이지에서 반드시 등록해야 노쇼 패널티를 받지 않습니다."
         )
+        
+        # 내부 구조 바구니를 비워주고 화면 새로고침 단계를 진행합니다.
+        self.selected_slots = []
         self.show_time_screen(date, room_id)
     
     def show_my_reservation_screen(self):
@@ -294,7 +305,6 @@ class StudyRoomPage(tk.Frame):
         tk.Label(self, text="내 예약 조회 / 취소", font=("맑은 고딕", 20, "bold")).pack(pady=20)
 
         reservations = load_study_reservations()
-        # 내가 방장이거나 팀원으로 포함된 모든 예약 조회
         my_res = [r for r in reservations if str(r["leader"]) == str(self.user) or str(self.user) in [str(m) for m in r["members"]]]
 
         if not my_res:
@@ -313,18 +323,10 @@ class StudyRoomPage(tk.Frame):
                 text = f"[{role_txt}] 날짜: {r['date']} | 공간: {room_name} | 시간: {r['time_slot']}\n상태: {status_txt} | 인원: {r['people_count']}명"
                 tk.Label(frame, text=text, font=("맑은 고딕", 10), justify="left").pack(side="left", padx=10, pady=5)
                 
-                # ---------------- [권한 제어 로직 추가] ----------------
-                # 오직 방장(Leader)에게만 취소 및 자리 이동 권한을 부여합니다.
                 if is_leader:
                     tk.Button(frame, text="취소", bg="#ffb3b3", command=lambda res=r: self.cancel_reservation(res)).pack(side="right", padx=5)
                     tk.Button(frame, text="이동", bg="#b3d9ff", command=lambda res=r: self.move_reservation_screen(res)).pack(side="right", padx=5)
                     tk.Button(frame, text="체크인", bg="#c2f0c2", command=lambda res=r: self.check_in(res)).pack(side="right", padx=5)
-                else:
-                    # 팀원에게는 체크인 상태 확인용 버튼만 두거나 혹은 아예 버튼을 비활성화/숨김 처리합니다.
-                    # 여기서는 팀원도 체크인은 같이 누를 수 있게 하거나, 방장만 하게 하려면 조건문을 조절할 수 있습니다.
-                    # 현재는 팀원일 때 취소/이동 버튼이 아예 생성되지 않습니다.
-                    pass
-                # --------------------------------------------------------
 
         tk.Button(self, text="처음으로", command=self.show_date_screen).pack(pady=20)
 
