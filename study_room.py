@@ -43,7 +43,7 @@ class StudyRoomPage(tk.Frame):
         super().__init__(master)
         self.user = user
         self.on_back = on_back
-        self.selected_slots = [] # ★ 사용자가 마우스로 클릭클릭한 임시 선택 시간대 리스트
+        self.selected_slots = [] 
         self.show_date_screen()
 
     def clear_screen(self):
@@ -73,7 +73,7 @@ class StudyRoomPage(tk.Frame):
 
     def show_date_screen(self):
         self.clear_screen()
-        self.selected_slots = [] # 화면 초기화 시 선택 정보 초기화
+        self.selected_slots = [] 
         tk.Label(self, text="스터디룸 예약 시스템", font=("맑은 고딕", 22, "bold")).pack(pady=25)
         tk.Label(self, text=f"현재 로그인 사용자: {self.user}", font=("맑은 고딕", 12)).pack(pady=5)
         tk.Label(self, text="예약할 날짜를 선택하세요.", font=("맑은 고딕", 15)).pack(pady=20)
@@ -97,7 +97,7 @@ class StudyRoomPage(tk.Frame):
             messagebox.showwarning("입력 오류", "날짜를 입력하세요.")
             return
         self.clear_screen()
-        self.selected_slots = [] # 화면 초기화 시 선택 정보 초기화
+        self.selected_slots = [] 
         tk.Label(self, text=f"{date} 예약할 공간 선택", font=("맑은 고딕", 20, "bold")).pack(pady=20)
 
         canvas_frame = tk.Frame(self)
@@ -132,15 +132,14 @@ class StudyRoomPage(tk.Frame):
         tk.Label(self, text=f"{room['name']} 예약 가능 시간", font=("맑은 고딕", 20, "bold")).pack(pady=15)
         tk.Label(self, text=f"날짜: {date}  |  정원: {room['capacity']}명  |  최소인원: {room['min_people']}명", font=("맑은 고딕", 11)).pack(pady=5)
         
-        # 안내 문구 상단에 노출
-        tk.Label(self, text="※ 원하는 시간대 버튼을 클릭클릭하여 연속 최대 3시간까지 지정한 후 하단 [예약하기] 버튼을 누르세요.", 
+        tk.Label(self, text="※ 원하는 시간대 버튼들을 클릭하여 선택한 후 하단 [선택한 시간 예약하기] 버튼을 누르세요.", 
                  font=("맑은 고딕", 10, "bold"), fg="#E53935").pack(pady=3)
 
         legend = tk.Frame(self)
         legend.pack(pady=5)
-        tk.Label(legend, text="가능", bg="#9be79b", width=8).pack(side="left", padx=5)
+        tk.Label(legend, text="예약가능", bg="#9be79b", width=8).pack(side="left", padx=5)
         tk.Label(legend, text="선택중", bg="#ffe680", width=8).pack(side="left", padx=5)
-        tk.Label(legend, text="사용중", bg="#ff9fbd", width=8).pack(side="left", padx=5)
+        tk.Label(legend, text="예약불가", bg="#ff9fbd", width=8).pack(side="left", padx=5)
 
         time_frame = tk.Frame(self)
         time_frame.pack(pady=15)
@@ -161,53 +160,51 @@ class StudyRoomPage(tk.Frame):
             btn.config(command=lambda s=slot, b=btn: self.reserve_room(date, room_id, s, b))
             btn.grid(row=index // 4, column=index % 4, padx=6, pady=6)
 
-        bottom = tk.Frame(self)
-        bottom.pack(pady=10)
+        # ==================== 수정된 하단 버튼 배치 영역 ====================
+        # 1. '선택한 시간 예약하기' 버튼을 위한 독립된 상단 프레임 (한 줄 전체 차지)
+        reserve_btn_frame = tk.Frame(self)
+        reserve_btn_frame.pack(pady=(15, 5))
         
-        # ★ 하단에 일괄 처리를 수행할 예약 확정 실행 버튼 생성
-        tk.Button(bottom, text="✅ 선택한 시간 최종 예약하기", font=("맑은 고딕", 11, "bold"), bg="#4CAF50", fg="white", padx=12,
-                  command=lambda: self.process_final_reservation(date, room_id)).pack(side="left", padx=10)
+        tk.Button(reserve_btn_frame, text="✅ 선택한 시간 예약하기", font=("맑은 고딕", 12, "bold"), 
+                  bg="#4CAF50", fg="white", width=40, height=2,
+                  command=lambda: self.process_final_reservation(date, room_id)).pack()
 
-        tk.Button(bottom, text="공간 다시 선택", command=lambda: self.show_room_screen(date)).pack(side="left", padx=10)
-        tk.Button(bottom, text="날짜 다시 선택", command=self.show_date_screen).pack(side="left", padx=10)
-        tk.Button(bottom, text="메인메뉴로", command=self.on_back).pack(side="left", padx=10)
+        # 2. 나머지 이동/이전 메뉴 버튼들을 위한 하단 프레임
+        navigation_frame = tk.Frame(self)
+        navigation_frame.pack(pady=(5, 15))
+        
+        tk.Button(navigation_frame, text="공간 다시 선택", font=("맑은 고딕", 10), command=lambda: self.show_room_screen(date)).pack(side="left", padx=10)
+        tk.Button(navigation_frame, text="날짜 다시 선택", font=("맑은 고딕", 10), command=self.show_date_screen).pack(side="left", padx=10)
+        tk.Button(navigation_frame, text="메인메뉴로", font=("맑은 고딕", 10), command=self.on_back).pack(side="left", padx=10)
+        # ====================================================================
 
     def reserve_room(self, date, room_id, time_slot, button):
-        """시간 슬롯 버튼을 눌렀을 때 팝업창을 생략하고 즉시 리스트에 주황색('선택중')으로 담아내는 함수"""
         if time_slot in self.selected_slots:
-            # 이미 선택된 목록을 다시 누르면 -> 토글식 선택 해제 처리
             self.selected_slots.remove(time_slot)
             button.config(bg="#9be79b", text=f"{time_slot}\n가능")
         else:
-            # 1. 최대 연속 3시간 제약 규정 예외처리 검사
-            if len(self.selected_slots) >= 3:
-                messagebox.showwarning("선택 제한", "스터디룸은 1회 예약 시 최대 연속 3시간까지만 선택하실 수 있습니다.")
-                return
-                
-            # 2. 중간에 빈 시간이 끊어지지 않도록 가로채기 검증
-            if self.selected_slots:
-                existing_hours = sorted([int(s.split(":")[0]) for s in self.selected_slots])
-                current_hour = int(time_slot.split(":")[0])
-                
-                if current_hour != existing_hours[0] - 1 and current_hour != existing_hours[-1] + 1:
-                    messagebox.showwarning("선택 오류", "예약 시간은 중간에 공백 없이 연속된 시간대로만 선택하셔야 합니다.")
-                    return
+            self.selected_slots.append(time_slot)
+            button.config(bg="#ffe680", text=f"{time_slot}\n선택중")
 
-            # 임시 배열 저장 및 UI 피드백 반영
+    def reserve_room(self, date, room_id, time_slot, button):
+        """시간 슬롯 버튼 클릭 시 토글만 수행 (연속 시간 및 3시간 예외처리 코드 전면 제거)"""
+        if time_slot in self.selected_slots:
+            self.selected_slots.remove(time_slot)
+            button.config(bg="#9be79b", text=f"{time_slot}\n가능")
+        else:
             self.selected_slots.append(time_slot)
             button.config(bg="#ffe680", text=f"{time_slot}\n선택중")
 
     def process_final_reservation(self, date, room_id):
-        """[선택한 시간 최종 예약하기] 버튼을 누를 시 실행되어 팀원을 입력받고 일괄 기록하는 동기화 메인 로직"""
         if not self.selected_slots:
             messagebox.showwarning("선택 오류", "선택된 시간이 없습니다.\n원하는 시간 버튼을 먼저 한 개 이상 클릭해 주세요.")
             return
 
-        # 당일 지난 타임 차단 예외처리
         now = datetime.now()
         current_date_str = now.strftime("%Y-%m-%d")
         if date == current_date_str:
             try:
+                # 과거 시간대 검증을 위해 선택된 슬롯 중 가장 빠른 시간 체크
                 sorted_slots = sorted(self.selected_slots)
                 start_time_str = sorted_slots[0].split("-")[0].strip()
                 start_hour, start_minute = map(int, start_time_str.split(":"))
@@ -220,7 +217,6 @@ class StudyRoomPage(tk.Frame):
 
         room = ROOMS[room_id]
         
-        # 다중 클릭이 정상 완료된 뒤에 비로소 팀원 학번 입력 창 유도
         member_input = simpledialog.askstring("팀원 학번 입력", f"본인({self.user}) 외 팀원 학번을 쉼표(,)로 구분하여 입력하세요.")
         if member_input is None:
             return
@@ -231,7 +227,6 @@ class StudyRoomPage(tk.Frame):
             messagebox.showerror("입력 오류", "본인 학번은 자동으로 포함됩니다.")
             return
 
-        # [팀원 가입 및 패널티 제재 상태 실시간 통합 교차 검증]
         from login_2 import load_users  
         from main import is_user_banned, load_penalties
         existing_users = load_users()   
@@ -266,7 +261,6 @@ class StudyRoomPage(tk.Frame):
 
         reservations = load_study_reservations()
         
-        # 데이터 정합성 보장을 위한 선점 여부 파이널 더블 체크
         for slot in self.selected_slots:
             if self.is_reserved(date, room_id, slot):
                 messagebox.showerror("예약 실패", f"처리 도중 {slot} 시간대가 이미 타인에게 먼저 선점되었습니다.")
@@ -274,7 +268,6 @@ class StudyRoomPage(tk.Frame):
                 self.show_time_screen(date, room_id)
                 return
 
-        # 선택했던 슬롯들을 하나씩 순회하며 배열에 모두 추가
         for slot in self.selected_slots:
             reservations.append({
                 "leader": str(self.user), 
@@ -290,13 +283,12 @@ class StudyRoomPage(tk.Frame):
         
         messagebox.showinfo(
             "예약 완료", 
-            f"선택하신 총 {len(self.selected_slots)}시간 연속 예약이 정상적으로 완료되었습니다.\n\n"
+            f"선택하신 총 {len(self.selected_slots)}개의 시간대 예약이 정상적으로 완료되었습니다.\n\n"
             "※ [노쇼 방지 필수 안내]\n"
             "매 예약 시작 시간 전후 10분 이내에 해당 스터디룸 벽면에 부착된 "
             "인증 코드를 마이페이지에서 반드시 등록해야 노쇼 패널티를 받지 않습니다."
         )
         
-        # 내부 구조 바구니를 비워주고 화면 새로고침 단계를 진행합니다.
         self.selected_slots = []
         self.show_time_screen(date, room_id)
     
