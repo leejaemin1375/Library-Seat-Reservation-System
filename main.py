@@ -7,9 +7,9 @@ from study_room import StudyRoomPage, RESERVATIONS
 class MainApplication(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("도서관 통합 예약 시스템")
+        self.title("대학 도서관 통합 예약 시스템")
         self.geometry("600x600")
-        self.resizable(True, True)
+        self.resizable(False, False)
         
         self.current_user = None
         self.current_frame = None
@@ -33,7 +33,7 @@ class MainApplication(tk.Tk):
         self.show_mypage()
 
     def show_mypage(self):
-        """요구사항 1, 2: 로그인 후 첫 진입 화면을 통합 마이페이지로 설정"""
+        """로그인 후 첫 진입 화면을 통합 마이페이지로 설정"""
         self.clear_frame()
         self.geometry("600x650")
         self.resizable(False, False)
@@ -42,11 +42,10 @@ class MainApplication(tk.Tk):
         self.current_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         # 상단 타이틀 및 사용자 정보
-        tk.Label(self.current_frame, text="🏛️ 도서관 통합 예약 시스템", font=("맑은 고딕", 18, "bold")).pack(pady=10)
+        tk.Label(self.current_frame, text="🏛️ 도서관 통합 마이페이지", font=("맑은 고딕", 18, "bold")).pack(pady=10)
         tk.Label(self.current_frame, text=f"반갑습니다, {self.current_user}님", font=("맑은 고딕", 11, "italic"), fg="#333").pack(pady=5)
 
         # ====== [통합 예약 관리 섹션] ======
-        # -padding 옵션 에러 해결을 위해 표준 tk.LabelFrame 구조에 padx, pady 적용
         nav_box = tk.LabelFrame(self.current_frame, text="새로운 예약하기", font=("맑은 고딕", 10, "bold"), padx=10, pady=10)
         nav_box.pack(fill="x", pady=10)
         
@@ -81,9 +80,9 @@ class MainApplication(tk.Tk):
 
         tk.Canvas(status_box, height=1, bg="#ddd", bd=0, highlightthickness=0).pack(fill="x", pady=10)
 
-        # 2. 그룹 스터디룸 현황 추출
+        # 2. 그룹 스터디룸 현황 추출 (방장 및 팀원 명단 포함자 모두 조회)
         tk.Label(status_box, text="■ 그룹 스터디룸", font=("맑은 고딕", 10, "bold"), fg="#2196F3").pack(anchor="w", pady=2)
-        sr_booked = [r for r in RESERVATIONS if r["leader"] == self.current_user]
+        sr_booked = [r for r in RESERVATIONS if r["leader"] == self.current_user or self.current_user in r["members"]]
         
         if sr_booked:
             from study_room import ROOMS as SR_ROOMS
@@ -93,7 +92,9 @@ class MainApplication(tk.Tk):
                 
                 room_name = SR_ROOMS[res["room_id"]]["name"]
                 status_txt = "체크인 완료" if res.get("checked_in") else "체크인 전"
-                info_txt = f"날짜: {res['date']} | 공간: {room_name}\n시간: {res['time_slot']} ({status_txt})"
+                
+                role_txt = "[방장]" if res["leader"] == self.current_user else f"[팀원] 방장:{res['leader']}"
+                info_txt = f"날짜: {res['date']} | 공간: {room_name} {role_txt}\n시간: {res['time_slot']} ({status_txt})"
                 
                 tk.Label(sr_frame, text=info_txt, font=("맑은 고딕", 9), justify="left", bg="#f9f9f9").pack(side="left", padx=10)
                 tk.Button(sr_frame, text="취소", bg="#f44336", fg="white", font=("맑은 고딕", 9),
@@ -115,7 +116,12 @@ class MainApplication(tk.Tk):
                 self.show_mypage()
 
     def cancel_study_room(self, reservation):
-        if messagebox.askyesno("예약 취소", "스터디룸 예약을 취소하시겠습니까?"):
+        """[개선] 권한 검증 기능: 방장이 아닌 팀원이 취소를 시도할 경우 경고창 차단"""
+        if reservation["leader"] != self.current_user:
+            messagebox.showerror("권한 오류", "스터디룸 예약 취소 권한이 없습니다.\n(예약 취소는 방장만 가능합니다.)")
+            return
+
+        if messagebox.askyesno("예약 취소", "스터디룸 예약을 취소하시겠습니까?\n취소 시 전체 연속 예약 및 팀원 명단이 함께 삭제됩니다."):
             if reservation in RESERVATIONS:
                 RESERVATIONS.remove(reservation)
                 messagebox.showinfo("취소 완료", "스터디룸 예약이 취소되었습니다.")
@@ -131,7 +137,7 @@ class MainApplication(tk.Tk):
     def show_study_room(self):
         self.clear_frame()
         self.geometry("900x700")
-        self.resizable(True, True)
+        self.resizable(False, False)
         self.current_frame = StudyRoomPage(self, user=self.current_user, on_back=self.show_mypage)
         self.current_frame.pack(fill="both", expand=True)
 

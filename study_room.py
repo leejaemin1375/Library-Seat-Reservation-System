@@ -2,7 +2,14 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from tkcalendar import DateEntry
 from datetime import datetime
+import json
+import os
+import threading
 import login_2
+
+# 스터디룸 예약 정보가 저장될 파일 및 동시성 제어 락 설정
+STUDY_ROOMS_FILE = "study_rooms.json"
+_lock = threading.RLock()
 
 ROOMS = {
     1: {"name": "그룹스터디룸1", "capacity": 12, "min_people": 6, "checkin_code": "A101"},
@@ -19,16 +26,70 @@ ROOMS = {
 }
 
 TIME_SLOTS = [f"{hour:02d}-{hour+1:02d}" for hour in range(9, 21)]
-RESERVATIONS = []
 TEMP_LOCKS = []
+
+# ── [추가] JSON 불러오기 / 저장 함수 ──────────────────────────────
+def load_study_reservations():
+    """파일에서 스터디룸 예약 리스트를 안전하게 불러옵니다."""
+    with _lock:
+        if os.path.exists(STUDY_ROOMS_FILE):
+            with open(STUDY_ROOMS_FILE, "r", encoding="utf-8") as f:
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    return []
+        return []
+
+def save_study_reservations(data):
+    """스터디룸 예약 리스트를 파일에 안전하게 저장합니다."""
+    with _lock:
+        try:
+            with open(STUDY_ROOMS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        except IOError:
+            messagebox.showerror("파일 오류", "스터디룸 데이터를 저장하는 중 에러가 발생했습니다.")
+
+# 다른 모듈(main.py)에서 전역 리스트처럼 참조할 수 있도록 동적 프로퍼티(리스트 대행 변수) 구현
+class ReservationsProxy(list):
+    def __iter__(self):
+        return iter(load_study_reservations())
+    def __len__(self):
+        return len(load_study_reservations())
+    def append(self, item):
+        current_data = load_study_reservations()
+        current_data.append(item)
+        save_study_reservations(current_data)
+    def remove(self, item):
+        current_data = load_study_reservations()
+        if item in current_data:
+            current_data.remove(item)
+            save_study_reservations(current_data)
+        else:
+            # 주소값이 달라 비교가 안 될 경우를 대비한 값 기반 2차 삭제 처리
+            for block in current_data:
+                if (block["leader"] == item["leader"] and 
+                    block["date"] == item["date"] and 
+                    block["room_id"] == item["room_id"] and 
+                    block["time_slot"] == item["time_slot"]):
+                    current_data.remove(block)
+                    save_study_reservations(current_data)
+                    break
+
+# 외부 main.py의 구조적 변경 없이 파일과 완벽 연동되도록 프록시 객체 배치
+RESERVATIONS = ReservationsProxy()
+
 
 class StudyRoomPage(tk.Frame):
     def __init__(self, master, user, on_back):
         super().__init__(master)
         self.user = user
         self.on_back = on_back
-        self.selected_time_slot = None  # 사용자가 선택한 시간을 저장할 변수
-        self.time_buttons = {}          # 실시간 색상 변경을 위해 버튼 객체들을 저장할 딕셔너리
+        self.selected_slots = []
+        self.time_buttons = {}
+        
+        if hasattr(self.master, "resizable"):
+            self.master.resizable(False, False)
+            
         self.show_date_screen()
 
     def clear_screen(self):
@@ -36,14 +97,29 @@ class StudyRoomPage(tk.Frame):
             widget.destroy()
 
     def is_reserved(self, date, room_id, time_slot):
-        return any(r["date"] == date and r["room_id"] == room_id and r["time_slot"] == time_slot for r in RESERVATIONS)
+        return any(r["date"] == date and r["room_id"] == room_id and r["time_slot"] == time_slot for r in load_study_reservations())
 
     def is_locked(self, date, room_id, time_slot):
         return any(lock["date"] == date and lock["room_id"] == room_id and lock["time_slot"] == time_slot for lock in TEMP_LOCKS)
 
+    def is_past_time(self, date_str, time_slot):
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            today = datetime.now().date()
+            if target_date < today:
+                return True
+            if target_date == today:
+                current_hour = datetime.now().hour
+                start_hour = int(time_slot.split("-")[0])
+                if start_hour <= current_hour:
+                    return True
+            return False
+        except ValueError:
+            return True
+
     def show_date_screen(self):
         self.clear_screen()
-        self.selected_time_slot = None  # 날짜 변경 시 초기화
+        self.selected_slots = []
         
         tk.Label(self, text="그룹 스터디룸 예약", font=("맑은 고딕", 18, "bold")).pack(pady=20)
         tk.Label(self, text="예약 희망 날짜를 조회해 주세요.", font=("맑은 고딕", 11)).pack(pady=5)
@@ -61,7 +137,7 @@ class StudyRoomPage(tk.Frame):
 
     def show_room_screen(self, date):
         self.clear_screen()
-        self.selected_time_slot = None  # 룸 변경 시 초기화
+        self.selected_slots = []
         
         tk.Label(self, text=f"📅 {date} 스터디룸 선택", font=("맑은 고딕", 16, "bold")).pack(pady=15)
 
@@ -89,25 +165,25 @@ class StudyRoomPage(tk.Frame):
 
     def show_time_screen(self, date, room_id):
         self.clear_screen()
-        self.selected_time_slot = None  # 초기 진입 시 미선택 상태
+        self.selected_slots = []
         self.time_buttons = {}
         room = ROOMS[room_id]
         
         tk.Label(self, text=f"⏱️ {room['name']} 시간 예약 ({date})", font=("맑은 고딕", 15, "bold")).pack(pady=15)
 
-        # 범례 표시 구역
         legend_frame = tk.Frame(self)
         legend_frame.pack(pady=5)
         tk.Label(legend_frame, text="예약가능", bg="#9be79b", width=10, font=("맑은 고딕", 9)).pack(side="left", padx=5)
         tk.Label(legend_frame, text="내가선택함", bg="#ffe680", width=10, font=("맑은 고딕", 9)).pack(side="left", padx=5)
-        tk.Label(legend_frame, text="사용중(불가)", bg="#ff9fbd", width=10, font=("맑은 고딕", 9)).pack(side="left", padx=5)
+        tk.Label(legend_frame, text="사용중/마감", bg="#ff9fbd", width=10, font=("맑은 고딕", 9)).pack(side="left", padx=5)
 
         time_frame = tk.Frame(self)
         time_frame.pack(pady=20)
 
-        # 시간 그리드 생성
         for index, slot in enumerate(TIME_SLOTS):
-            if self.is_reserved(date, room_id, slot):
+            if self.is_past_time(date, slot):
+                text, color, state = f"{slot}\n[마감]", "#e0e0e0", "disabled"
+            elif self.is_reserved(date, room_id, slot):
                 text, color, state = f"{slot}\n[사용중]", "#ff9fbd", "disabled"
             else:
                 text, color, state = f"{slot}\n[예약가능]", "#9be79b", "normal"
@@ -116,15 +192,12 @@ class StudyRoomPage(tk.Frame):
                             command=lambda s=slot: self.select_time_slot(s))
             btn.grid(row=index // 4, column=index % 4, padx=6, pady=6)
             
-            # 예약 가능한 버튼들만 추후 색상 제어를 위해 딕셔너리에 저장
             if state == "normal":
                 self.time_buttons[slot] = btn
 
-        # 하단 작업 관리 바 (예약하기 실행 버튼 포함)
         action_frame = tk.Frame(self)
         action_frame.pack(pady=20)
 
-        # 최종 예약 진행 버튼 (처음엔 골라진 시간이 없으므로 일반 상태로 유도하고 클릭 시 체크)
         tk.Button(action_frame, text="선택한 시간으로 예약하기", font=("맑은 고딕", 11, "bold"), 
                   bg="#4CAF50", fg="white", width=25, height=2,
                   command=lambda: self.reserve_room(date, room_id)).pack(pady=10)
@@ -133,34 +206,53 @@ class StudyRoomPage(tk.Frame):
                   command=lambda: self.show_room_screen(date)).pack(side="left", padx=10)
 
     def select_time_slot(self, slot):
-        """[개선 기능] 사용자가 시간을 누르면 즉시 예약하지 않고 '내가선택함' 노란색으로 상태 토글"""
-        # 기존에 선택되어 있던 버튼이 있다면 원래 색상(연두색)으로 되돌림
-        if self.selected_time_slot and self.selected_time_slot in self.time_buttons:
-            self.time_buttons[self.selected_time_slot].config(bg="#9be79b", text=f"{self.selected_time_slot}\n[예약가능]")
-        
-        # 새로 선택한 슬롯 저장 및 색상 강조
-        self.selected_time_slot = slot
+        if slot in self.selected_slots:
+            idx = self.selected_slots.index(slot)
+            for s in self.selected_slots[idx:]:
+                if s in self.time_buttons:
+                    self.time_buttons[s].config(bg="#9be79b", text=f"{s}\n[예약가능]")
+            self.selected_slots = self.selected_slots[:idx]
+            return
+
+        if len(self.selected_slots) >= 3:
+            messagebox.showwarning("선택 제한", "스터디룸은 최대 연속 3시간까지만 예약이 가능합니다.\n기존 선택이 초기화됩니다.")
+            self.reset_all_slots()
+            return
+
+        if self.selected_slots:
+            hours = sorted([int(s.split("-")[0]) for s in self.selected_slots])
+            new_hour = int(slot.split("-")[0])
+            if not (new_hour == hours[-1] + 1 or new_hour == hours[0] - 1):
+                messagebox.showwarning("선택 오류", "연속된 시간대만 함께 선택하여 예약할 수 있습니다.")
+                self.reset_all_slots()
+                return
+
+        self.selected_slots.append(slot)
+        self.selected_slots.sort()
         if slot in self.time_buttons:
             self.time_buttons[slot].config(bg="#ffe680", text=f"{slot}\n[선택됨]")
 
+    def reset_all_slots(self):
+        for s in self.selected_slots:
+            if s in self.time_buttons:
+                self.time_buttons[s].config(bg="#9be79b", text=f"{s}\n[예약가능]")
+        self.selected_slots = []
+
     def reserve_room(self, date, room_id):
-        """[개선 기능] 하단 버튼을 눌렀을 때 비로소 작동하며, 선택된 시간이 있을 때만 명단 입력 팝업 노출"""
         room = ROOMS[room_id]
         
-        # 예외 처리: 시간을 고르지 않고 예약 버튼부터 누른 경우 차단
-        if not self.selected_time_slot:
-            messagebox.showwarning("선택 오류", "먼저 이용하실 시간대를 위 그리드에서 클릭해 주세요.")
+        if not self.selected_slots:
+            messagebox.showwarning("선택 오류", "먼저 이용하실 시간대를 위 그리드에서 클릭해 주세요. (최대 3시간 연속 가능)")
             return
 
-        time_slot = self.selected_time_slot
+        time_summary = f"{self.selected_slots[0].split('-')[0]}:00 ~ {self.selected_slots[-1].split('-')[1]}:00"
 
-        # 이중 예약 방지를 위한 최종 실시간 상태 재검증
-        if self.is_reserved(date, room_id, time_slot):
-            messagebox.showerror("예약 불가", "그새 다른 사용자가 예약을 완료한 시간대입니다. 다른 시간을 골라주세요.")
-            return
+        for slot in self.selected_slots:
+            if self.is_reserved(date, room_id, slot):
+                messagebox.showerror("예약 불가", f"선택하신 시간대 중 [{slot}]이 이미 예약되었습니다. 다시 설정해 주세요.")
+                return
 
-        # 팝업을 띄워 팀원 확인 받기
-        member_input = simpledialog.askstring("팀원 명단 인증", f"[{time_slot}]에 동반 이용할 팀원의 학번을 쉼표(,)로 구분해 입력하세요.")
+        member_input = simpledialog.askstring("팀원 명단 인증", f"[{time_summary}]에 동반 이용할 팀원의 학번을 쉼표(,)로 구분해 입력하세요.")
         if member_input is None: 
             return
 
@@ -170,7 +262,6 @@ class StudyRoomPage(tk.Frame):
             messagebox.showerror("입력 오류", "방장(본인) 학번은 명단에 명시할 필요가 없습니다.")
             return
 
-        # 회원가입 데이터베이스(users.json) 연동 검증
         registered_users = login_2.load_users()
         invalid_members = [m for m in members if m not in registered_users]
 
@@ -183,13 +274,12 @@ class StudyRoomPage(tk.Frame):
             messagebox.showerror("인원 기준 오류", f"해당 룸 인원 조건 제한에 부합하지 않습니다.\n(최소: {room['min_people']}명, 최대: {room['capacity']}명)\n현재 입력 인원: {total_people}명")
             return
 
-        # 중앙 저장소 데이터에 반영
-        RESERVATIONS.append({
-            "leader": self.user, "members": members, "date": date,
-            "room_id": room_id, "time_slot": time_slot, "people_count": total_people, "checked_in": False
-        })
+        # 리스트에 데이터를 넣으면 프록시 객체가 감지하여 자동으로 json 파일에 쓰기 작업을 수행합니다.
+        for slot in self.selected_slots:
+            RESERVATIONS.append({
+                "leader": self.user, "members": members, "date": date,
+                "room_id": room_id, "time_slot": slot, "people_count": total_people, "checked_in": False
+            })
         
-        messagebox.showinfo("예약 완료", f"{room['name']} [{time_slot}] 예약이 확정되었습니다.\n현황은 마이페이지에서 통합 관리됩니다.")
-        
-        # 예약이 완료되면 부드럽게 메인 마이페이지 대시보드로 복귀
+        messagebox.showinfo("예약 완료", f"{room['name']} [{time_summary}] 연속 예약이 확정되었습니다.\n현황은 마이페이지에서 통합 관리됩니다.")
         self.on_back()

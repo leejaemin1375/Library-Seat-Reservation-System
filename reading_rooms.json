@@ -1,0 +1,14 @@
+{
+    "열람실1": {
+        "total": 20,
+        "reservations": {}
+    },
+    "열람실2": {
+        "total": 30,
+        "reservations": {}
+    },
+    "열람실3": {
+        "total": 40,
+        "reservations": {}
+    }
+}
