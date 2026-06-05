@@ -112,17 +112,54 @@ class ReadingRoomPage(tk.Frame):
                   command=self.on_back).pack(pady=20)
 
     def _make_room_card(self, room, used):
-        card = tk.Frame(self, relief="solid", bd=1, padx=10, pady=8)
-        card.pack(fill="x", padx=20, pady=4)
-        tk.Label(card, text=room["name"], font=("맑은 고딕", 11, "bold"), anchor="w").pack(fill="x")
+        # 1. 카드 전체 컨테이너 스타일 개선 (둥근 모서리 느낌과 투명 테두리 추가)
+        card = tk.Frame(self, relief="solid", bd=1, bg="white", highlightthickness=1, highlightbackground="#E0E0E0")
+        card.pack(fill="x", padx=25, pady=6)
         
-        count_frame = tk.Frame(card)
-        count_frame.pack(fill="x")
-        tk.Label(count_frame, text=f"{used} / {room['total']} 사용 중", font=("맑은 고딕", 9), fg="#555").pack(side="left")
+        # 내부 여백 확보용 패딩 프레임
+        pad_frame = tk.Frame(card, bg="white", padx=15, pady=10)
+        pad_frame.pack(fill="both", expand=True)
 
-        for widget in [card] + card.winfo_children():
+        # 2. 열람실 이름 (글씨 크기를 조금 키우고 세련된 색상 적용)
+        tk.Label(pad_frame, text=room["name"], font=("맑은 고딕", 12, "bold"), bg="white", fg="#1A237E", anchor="w").pack(fill="x")
+        
+        # 정보 출력을 위한 가로 프레임
+        info_frame = tk.Frame(pad_frame, bg="white")
+        info_frame.pack(fill="x", pady=(5, 0))
+
+        # 좌석 통계 계산
+        total = room["total"]
+        available = total - used # 잔여 좌석 계산
+
+        # 3. 실시간 이용 현황 수치 강조 텍스트
+        stats_text = f"🟢 이용 가능: {available}석  /  🟣 사용 중: {used}석"
+        tk.Label(info_frame, text=stats_text, font=("맑은 고딕", 9, "bold"), fg="#555555", bg="white").pack(side="left")
+        
+        ratio_text = f"({used}/{total}석)"
+        tk.Label(info_frame, text=ratio_text, font=("Arial", 9), fg="#9E9E9E", bg="white").pack(side="right")
+
+        # 4. ★ 시각적인 잔여 좌석 진행률 바 (Progress Bar) 생성
+        progress_bg = tk.Frame(pad_frame, bg="#E0E0E0", height=8) # 회색 배경 바
+        progress_bg.pack(fill="x", pady=(8, 0))
+        progress_bg.pack_propagate(False) # 높이 고정
+
+        if total > 0:
+            fill_width_ratio = used / total
+            # 혼잡도에 따라 채워지는 색상 변경 (80% 이상 사용 시 경고색인 주황/빨강 계열 변환)
+            if fill_width_ratio >= 0.8:
+                bar_color = "#E53935" # 만석 임박: 빨간색
+            elif fill_width_ratio >= 0.5:
+                bar_color = "#FB8C00" # 보통: 주황색
+            else:
+                bar_color = "#2196F3" # 여유: 파란색
+
+            # 비율만큼 채워지는 실제 게이지 바
+            progress_bar = tk.Canvas(progress_bg, bg=bar_color, highlightthickness=0, height=8)
+            progress_bar.place(relwidth=fill_width_ratio, relheight=1.0)
+
+        # 5. 기존 카드 클릭 이벤트 유지 (클릭 시 좌석 배치도로 이동)
+        for widget in [card, pad_frame, info_frame, progress_bg] + pad_frame.winfo_children():
             widget.bind("<Button-1>", lambda e, r=room: self.show_seat_map(r))
-
 
     def show_seat_map(self, room):
         self._clear()
@@ -161,7 +198,7 @@ class ReadingRoomPage(tk.Frame):
             canvas.create_rectangle(30, 30, 110, 460, fill="#fcfcfc", outline="#aaa")
             canvas.create_rectangle(350, 30, 430, 460, fill="#fcfcfc", outline="#aaa")
             canvas.create_rectangle(160, 80, 300, 380, fill="#EFEBE9", outline="#5D4037", width=2)
-            canvas.create_text(230, 230, text="중앙 오픈형\n공유 대형 테이블", font=("맑은 고딕", 9, "bold"), fill="#5D4037", justify="center")
+            canvas.create_text(230, 230, text="오픈형 테이블", font=("맑은 고딕", 9, "bold"), fill="#5D4037", justify="center")
 
             canvas.create_rectangle(190, 535, 270, 545, fill="#F5F5F5", outline="#F5F5F5")
             canvas.create_line(190, 540, 225, 515, fill="#2196F3", width=3)
