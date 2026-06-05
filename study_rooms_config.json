@@ -1,0 +1,13 @@
+{
+    "1": {"name": "그룹스터디룸1", "capacity": 12, "min_people": 6, "checkin_code": "A101"},
+    "2": {"name": "그룹스터디룸2", "capacity": 10, "min_people": 5, "checkin_code": "A102"},
+    "3": {"name": "그룹스터디룸3", "capacity": 6, "min_people": 3, "checkin_code": "A103"},
+    "4": {"name": "그룹스터디룸4", "capacity": 6, "min_people": 3, "checkin_code": "A104"},
+    "5": {"name": "그룹스터디룸5", "capacity": 4, "min_people": 2, "checkin_code": "A105"},
+    "6": {"name": "그룹스터디룸6", "capacity": 4, "min_people": 2, "checkin_code": "A106"},
+    "7": {"name": "그룹스터디룸7", "capacity": 4, "min_people": 2, "checkin_code": "A107"},
+    "8": {"name": "그룹스터디룸8", "capacity": 4, "min_people": 2, "checkin_code": "A108"},
+    "9": {"name": "그룹스터디룸9", "capacity": 8, "min_people": 4, "checkin_code": "A109"},
+    "10": {"name": "그룹스터디룸10", "capacity": 8, "min_people": 4, "checkin_code": "A110"},
+    "11": {"name": "소회의실", "capacity": 20, "min_people": 10, "checkin_code": "B201"}
+}

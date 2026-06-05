@@ -132,8 +132,13 @@ class MainApp(tk.Tk):
                 
                 sr_info_frame = tk.Frame(sr_frame, bg="#f9f9f9")
                 sr_info_frame.pack(side="left", fill="both", expand=True)
-                
-                room_name = SR_ROOMS[res["room_id"]]["name"]
+
+                room_info = SR_ROOMS.get(int(res["room_id"]))
+                if room_info:
+                    room_name = room_info["name"]
+                else:
+                    room_name = f"알 수 없는 공간(ID: {res['room_id']})"
+
                 ci_status = " [입실완료]" if res.get("checked_in", False) else " [미입실]"
                 role_txt = "[방장]" if res["leader"] == self.current_user else f"[팀원]"
                 

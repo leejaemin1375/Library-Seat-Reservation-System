@@ -1,4 +1,4 @@
-# reading_room.py 전체 수정본 (주요 변경 부위 주석 표시)
+# reading_room.py
 import tkinter as tk
 import tkinter.messagebox as msgbox
 import json
@@ -9,31 +9,40 @@ from datetime import datetime, timedelta
 ROOMS_FILE = "reading_rooms.json"
 _lock = threading.RLock()
 
-ROOMS = [
-    {"name": "열람실1", "total": 20},
-    {"name": "열람실2", "total": 30},
-    {"name": "열람실3", "total": 40},
-]
-
 STATUS_COLORS = {
     0: {"bg": "#4CAF50", "fg": "white"},  # 배정가능
     1: {"bg": "#9C27B0", "fg": "white"},  # 사용중
     2: {"bg": "#F44336", "fg": "white"},  # 배정불가
 }
 
-def load_rooms():
+# 기본 구조 테이블 (최초 1회 파일 생성용 데이터 테이블)
+DEFAULT_READING_DATA = {
+    "rooms_config": {
+        "열람실1": {"total": 20, "seats": {str(i): f"R1-S{i:02d}" for i in range(1, 21)}},
+        "열람실2": {"total": 30, "seats": {str(i): f"R2-S{i:02d}" for i in range(1, 31)}},
+        "열람실3": {"total": 40, "seats": {str(i): f"R3-S{i:02d}" for i in range(1, 41)}}
+    },
+    "reservations": {
+        "열람실1": {}, "열람실2": {}, "열람실3": {}
+    }
+}
+
+def load_reading_data():
+    """파일에서 설정 정보와 예약 데이터 전체를 불러옵니다."""
     with _lock:
         if os.path.exists(ROOMS_FILE):
             with open(ROOMS_FILE, "r", encoding="utf-8") as f:
                 try:
-                    return json.load(f)
+                    data = json.load(f)
+                    if "rooms_config" in data and "reservations" in data:
+                        return data
                 except json.JSONDecodeError:
                     pass
-        default = {r["name"]: {"total": r["total"], "reservations": {}} for r in ROOMS}
-        save_rooms(default)
-        return default
+        save_reading_data(DEFAULT_READING_DATA)
+        return DEFAULT_READING_DATA
 
-def save_rooms(data):
+def save_reading_data(data):
+    """설정과 예약 데이터를 안전하게 JSON에 저장합니다."""
     with _lock:
         try:
             with open(ROOMS_FILE, "w", encoding="utf-8") as f:
@@ -41,18 +50,24 @@ def save_rooms(data):
         except IOError:
             msgbox.showerror("파일 오류", "열람실 데이터를 저장하는 중 에러가 발생했습니다.")
 
-def get_seat_status(reservations, seat_num):
-    seat_key = str(seat_num)
-    if seat_key not in reservations:
-        return 0
-    try:
-        end_dt = datetime.strptime(reservations[seat_key]["end_time"], "%Y-%m-%d %H:%M")
-        return 1 if datetime.now() < end_dt else 0
-    except (ValueError, KeyError):
-        return 0
+# 하위 호환 매핑용 함수들
+def load_rooms():
+    return load_reading_data()["reservations"]
+
+def save_rooms(new_reservations):
+    full_data = load_reading_data()
+    full_data["reservations"] = new_reservations
+    save_reading_data(full_data)
+
+def get_rooms_config():
+    return load_reading_data()["rooms_config"]
+
+# main.py 임포트용 별칭
+load_reading_rooms = load_rooms
+save_reading_rooms = save_rooms
+
 
 class ReadingRoomPage(tk.Frame):
-    # [수정] target_room 매개변수 추가 (마이페이지에서 이동 버튼으로 직행할 때 사용)
     def __init__(self, master, user, on_back, target_room=None):
         super().__init__(master)
         self.user = user
@@ -63,10 +78,10 @@ class ReadingRoomPage(tk.Frame):
         if hasattr(self.master, "resizable"):
             self.master.resizable(False, False)
             
-        # 바로 이동으로 들어왔다면 해당 열람실 도면을 띄우고, 아니면 목록을 띄움
         if target_room:
-            room_obj = next((r for r in ROOMS if r["name"] == target_room), None)
-            if room_obj:
+            rooms_config = get_rooms_config()
+            if target_room in rooms_config:
+                room_obj = {"name": target_room, "total": rooms_config[target_room]["total"]}
                 self.show_seat_map(room_obj)
             else:
                 self.show_room_list()
@@ -79,19 +94,22 @@ class ReadingRoomPage(tk.Frame):
 
     def show_room_list(self):
         self._clear()
-        rooms_data = load_rooms()
+        full_data = load_reading_data()
+        rooms_config = full_data["rooms_config"]
+        reservations_data = full_data["reservations"]
 
         top_frame = tk.Frame(self)
         top_frame.pack(fill="x", padx=15, pady=10)
         tk.Label(top_frame, text="열람실 좌석 선택", font=("맑은 고딕", 14, "bold")).pack(side="left", pady=15)
 
-        for room in ROOMS:
-            reservations = rooms_data.get(room["name"], {}).get("reservations", {})
+        for room_name, config in rooms_config.items():
+            reservations = reservations_data.get(room_name, {})
             used = sum(1 for s in reservations.values() if datetime.now() < datetime.strptime(s["end_time"], "%Y-%m-%d %H:%M"))
-            self._make_room_card(room, used)
+            room_obj = {"name": room_name, "total": config["total"]}
+            self._make_room_card(room_obj, used)
 
-        tk.Button(self, text="메인 마이페이지로 이동", font=("맑은 고딕", 10), width=22, 
-                  command=lambda: self.on_back(self.user)).pack(pady=20)
+        tk.Button(self, text="메인 마이페이지로 이동", font=("맑은 고딕", 10), width=22,
+                  command=self.on_back).pack(pady=20)
 
     def _make_room_card(self, room, used):
         card = tk.Frame(self, relief="solid", bd=1, padx=10, pady=8)
@@ -108,8 +126,7 @@ class ReadingRoomPage(tk.Frame):
     def show_seat_map(self, room):
         self._clear()
         self.selected_room = room
-        rooms_data = load_rooms()
-        reservations = rooms_data.get(room["name"], {}).get("reservations", {})
+        reservations = load_rooms().get(room["name"], {})
 
         tk.Label(self, text=f"🏛️ {room['name']} 실시간 도면 배치도", font=("맑은 고딕", 13, "bold")).pack(pady=10)
 
@@ -233,55 +250,66 @@ class ReadingRoomPage(tk.Frame):
             msgbox.showwarning("선택 불가", "이미 예약된 좌석입니다.")
             return
 
-        rooms_data = load_rooms()
+        rooms_reservations = load_rooms()
         current_booking = None
         
-        # [조건 2] 사용자가 이미 다른 곳에 예약되어 있는지 전수 탐색
-        for r_n, r_i in rooms_data.items():
-            for s_k, s_i in r_i["reservations"].items():
+        for r_n, r_i in rooms_reservations.items():
+            for s_k, s_i in r_i.items():
                 if s_i.get("user") == self.user:
                     current_booking = (r_n, s_k, s_i["end_time"])
                     break
 
-        # 이미 이용 중인 좌석이 있다면 '이동 확인 창'을 띄움
         if current_booking:
             if msgbox.askyesno("좌석 이동 확인", f"현재 {current_booking[0]} [{current_booking[1]}번] 좌석을 이용 중입니다.\n"
                                               f"선택하신 {self.selected_room['name']} [{seat_num}번] 좌석으로 이동하시겠습니까?"):
                 self.move_seat(current_booking[0], current_booking[1], seat_num, current_booking[2])
         else:
-            # 기존 신규 예약 절차
             if msgbox.askyesno("예약 확인", f"{self.selected_room['name']} {seat_num}번 좌석을 예약하시겠습니까?"):
                 self.reserve(seat_num)
 
-    # [추가] 실질적인 좌석 이동(기존 좌석 제거 -> 새 좌석 등록) 알고리즘 구현
     def move_seat(self, old_room, old_seat, new_seat, end_time):
-        rooms_data = load_rooms()
+        rooms_reservations = load_rooms()
         
-        # 1. 기존 좌석 정보 삭제
-        if old_room in rooms_data and old_seat in rooms_data[old_room]["reservations"]:
-            del rooms_data[old_room]["reservations"][old_seat]
+        if old_room in rooms_reservations and old_seat in rooms_reservations[old_room]:
+            del rooms_reservations[old_room][old_seat]
             
-        # 2. 새로운 좌석으로 이용 시간 그대로 유지하여 등록
         new_room_name = self.selected_room["name"]
-        rooms_data[new_room_name]["reservations"][str(new_seat)] = {
+        rooms_reservations[new_room_name][str(new_seat)] = {
             "user": self.user,
-            "end_time": end_time
+            "end_time": end_time,
+            "checked_in": False
         }
         
-        save_rooms(rooms_data)
-        msgbox.showinfo("이동 완료", f"성공적으로 좌석이 이동되었습니다!\n새 좌석: {new_room_name} [{new_seat}번]")
-        
-        # 마이페이지로 연동되어 리턴
-        self.on_back(self.user)
+        save_rooms(rooms_reservations)
+        msgbox.showinfo("좌석 이동 완료", f"성공적으로 좌석이 이동되었습니다!\n새 좌석: {new_room_name} [{new_seat}번]\n\n"
+                                        f"※ 해당 자리 책상 위에 붙은 고유 인증코드를 "
+                                        f"10분 내로 마이페이지에서 입력해야 예약이 자동 취소되지 않습니다.")
+        self.on_back()
 
     def reserve(self, seat_num):
-        rooms_data = load_rooms()
+        rooms_reservations = load_rooms()
         room_name = self.selected_room["name"]
         seat_key = str(seat_num)
 
         end_dt = datetime.now() + timedelta(hours=3)
-        rooms_data[room_name]["reservations"][seat_key] = {"user": self.user, "end_time": end_dt.strftime("%Y-%m-%d %H:%M")}
-        save_rooms(rooms_data)
+        rooms_reservations[room_name][seat_key] = {
+            "user": self.user, 
+            "end_time": end_dt.strftime("%Y-%m-%d %H:%M"),
+            "checked_in": False
+        }
+        save_rooms(rooms_reservations)
 
-        msgbox.showinfo("예약 완료", f"성공적으로 예약되었습니다.\n종료 시간: {end_dt.strftime('%H:%M')}")
-        self.on_back(self.user)
+        msgbox.showinfo("예약 완료", f"성공적으로 예약되었습니다.\n종료 시간: {end_dt.strftime('%H:%M')}\n\n"
+                                    f"※ [노쇼 방지 실시간 안내]\n배정된 자리 책상 표면에 부착된 물리 코드를 "
+                                    f"10분 이내에 마이페이지에서 인증해야 최종 승인됩니다.")
+        self.on_back()
+
+def get_seat_status(reservations, seat_num):
+    seat_key = str(seat_num)
+    if seat_key not in reservations:
+        return 0
+    try:
+        end_dt = datetime.strptime(reservations[seat_key]["end_time"], "%Y-%m-%d %H:%M")
+        return 1 if datetime.now() < end_dt else 0
+    except (ValueError, KeyError):
+        return 0
