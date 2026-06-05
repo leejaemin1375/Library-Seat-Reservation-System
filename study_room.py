@@ -70,11 +70,19 @@ class StudyRoomPage(tk.Frame):
         try:
             selected_date = datetime.strptime(date, "%Y-%m-%d").date()
             now = datetime.now()
-            if selected_date != now.date():
+            
+            # 선택한 날짜가 오늘보다 과거라면 무조건 True (마감)
+            if selected_date < now.date():
+                return True
+            # 선택한 날짜가 미래(내일 이후)라면 무조건 False (예약 가능)
+            if selected_date > now.date():
                 return False
-            end_hour = int(time_slot.split("-")[1].split(":")[0])
-            end_time = datetime(now.year, now.month, now.day, end_hour, 0)
-            return now >= end_time
+
+            start_hour = int(time_slot.split("-")[0].split(":")[0])
+            start_time = datetime(now.year, now.month, now.day, start_hour, 0)
+            
+            # 현재 시간이 타임슬롯 시작 시간 정각이거나 그 이후라면 True(지나간 시간) 반환
+            return now >= start_time
         except Exception:
             return True
 
@@ -168,6 +176,30 @@ class StudyRoomPage(tk.Frame):
         tk.Button(bottom, text="메인메뉴로", command=self.on_back).pack(side="left", padx=10)
 
     def reserve_room(self, date, room_id, time_slot):
+        # ---------------- [1. 당일 지나간 시간 예약 차단 로직] ----------------
+        from datetime import datetime
+        
+        now = datetime.now()
+        current_date_str = now.strftime("%Y-%m-%d") # 예: "2026-06-05"
+        
+        # 사용자가 선택한 예약일이 오늘인 경우에만 검사
+        if date == current_date_str:
+            try:
+                # 소스코드 내 TIME_SLOTS 형식인 "HH:00-HH:00"에서 시작 시간 추출
+                start_time_str = time_slot.split("-")[0].strip() # 예: "19:00"
+                start_hour, start_minute = map(int, start_time_str.split(":"))
+                
+                # 오늘 해당 타임슬롯의 시작 시간 객체 생성
+                slot_start_datetime = now.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+                
+                # 현재 시간이 타임슬롯 시작 시간과 같거나 이미 지났다면 즉시 차단
+                if now >= slot_start_datetime:
+                    messagebox.showerror("예약 불가", "이미 시작되었거나 지나간 시간대의 타임슬롯은 예약할 수 없습니다.")
+                    return
+            except Exception as e:
+                print(f"시간 파싱 오류: {e}")
+        # -----------------------------------------------------------------------
+
         room = ROOMS[room_id]
         if self.is_reserved(date, room_id, time_slot) or self.is_locked(date, room_id, time_slot):
             messagebox.showerror("예약 불가", "신청할 수 없는 시간대입니다.")
@@ -187,6 +219,26 @@ class StudyRoomPage(tk.Frame):
             messagebox.showerror("입력 오류", "본인 학번은 자동으로 포함됩니다.")
             self.remove_lock(date, room_id, time_slot)
             return
+
+        # ---------------- [2. 회원가입 여부 검증 로직] ----------------
+        from login_2 import load_users  # 사용자 목록을 로드하기 위해 임포트
+        existing_users = load_users()   # users.json에서 등록된 회원 목록 가져옴
+        
+        invalid_members = []
+        for m in members:
+            if m not in existing_users:
+                invalid_members.append(m)
+                
+        if invalid_members:
+            messagebox.showerror(
+                "예약 불가", 
+                f"등록되지 않은 사용자가 포함되어 있습니다.\n"
+                f"미가입 학번: {', '.join(invalid_members)}\n\n"
+                f"해당 팀원이 먼저 회원가입을 진행해야 합니다."
+            )
+            self.remove_lock(date, room_id, time_slot)
+            return
+        # ----------------------------------------------------------------
 
         total_people = len(members) + 1
         if total_people < room["min_people"] or total_people > room["capacity"]:
@@ -215,13 +267,14 @@ class StudyRoomPage(tk.Frame):
             "실제 인증 코드를 마이페이지에서 정확히 등록해야 입실 처리됩니다."
         )
         self.show_time_screen(date, room_id)
-
+    
     def show_my_reservation_screen(self):
         self.clear_screen()
         tk.Label(self, text="내 예약 조회 / 취소", font=("맑은 고딕", 20, "bold")).pack(pady=20)
 
         reservations = load_study_reservations()
-        my_res = [r for r in reservations if str(r["leader"]) == str(self.user)]
+        # 내가 방장이거나 팀원으로 포함된 모든 예약 조회
+        my_res = [r for r in reservations if str(r["leader"]) == str(self.user) or str(self.user) in [str(m) for m in r["members"]]]
 
         if not my_res:
             tk.Label(self, text="현재 예약 내역이 없습니다.", font=("맑은 고딕", 13)).pack(pady=20)
@@ -233,12 +286,24 @@ class StudyRoomPage(tk.Frame):
                 frame.pack(pady=5, padx=20, fill="x")
 
                 status_txt = "체크인 완료" if r.get("checked_in") else "체크인 전"
-                text = f"날짜: {r['date']} | 공간: {room_name} | 시간: {r['time_slot']}\n상태: {status_txt} | 인원: {r['people_count']}명"
+                is_leader = str(r["leader"]) == str(self.user)
+                role_txt = "[방장]" if is_leader else "[팀원]"
                 
+                text = f"[{role_txt}] 날짜: {r['date']} | 공간: {room_name} | 시간: {r['time_slot']}\n상태: {status_txt} | 인원: {r['people_count']}명"
                 tk.Label(frame, text=text, font=("맑은 고딕", 10), justify="left").pack(side="left", padx=10, pady=5)
-                tk.Button(frame, text="취소", bg="#ffb3b3", command=lambda res=r: self.cancel_reservation(res)).pack(side="right", padx=5)
-                tk.Button(frame, text="이동", bg="#b3d9ff", command=lambda res=r: self.move_reservation_screen(res)).pack(side="right", padx=5)
-                tk.Button(frame, text="체크인", bg="#c2f0c2", command=lambda res=r: self.check_in(res)).pack(side="right", padx=5)
+                
+                # ---------------- [권한 제어 로직 추가] ----------------
+                # 오직 방장(Leader)에게만 취소 및 자리 이동 권한을 부여합니다.
+                if is_leader:
+                    tk.Button(frame, text="취소", bg="#ffb3b3", command=lambda res=r: self.cancel_reservation(res)).pack(side="right", padx=5)
+                    tk.Button(frame, text="이동", bg="#b3d9ff", command=lambda res=r: self.move_reservation_screen(res)).pack(side="right", padx=5)
+                    tk.Button(frame, text="체크인", bg="#c2f0c2", command=lambda res=r: self.check_in(res)).pack(side="right", padx=5)
+                else:
+                    # 팀원에게는 체크인 상태 확인용 버튼만 두거나 혹은 아예 버튼을 비활성화/숨김 처리합니다.
+                    # 여기서는 팀원도 체크인은 같이 누를 수 있게 하거나, 방장만 하게 하려면 조건문을 조절할 수 있습니다.
+                    # 현재는 팀원일 때 취소/이동 버튼이 아예 생성되지 않습니다.
+                    pass
+                # --------------------------------------------------------
 
         tk.Button(self, text="처음으로", command=self.show_date_screen).pack(pady=20)
 

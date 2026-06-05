@@ -111,6 +111,7 @@ class MainApp(tk.Tk):
             tk.Label(status_box, text="예약된 열람실 좌석이 없습니다.", font=("맑은 고딕", 9), fg="gray").pack(anchor="w", padx=10, pady=5)
 
         # 2. 스터디룸 현황 파싱
+        # 2. 스터디룸 현황 파싱
         tk.Label(status_box, text="■ 스터디룸 현황", font=("맑은 고딕", 10, "bold"), fg="#2196F3").pack(anchor="w", pady=(10, 2))
         current_sr_list = load_study_reservations()
         sr_booked = [res for res in current_sr_list if str(res["leader"]) == str(self.current_user) or str(self.current_user) in [str(m) for m in res["members"]]]
@@ -129,7 +130,8 @@ class MainApp(tk.Tk):
                 room_name = room_info["name"] if room_info else f"알 수 없는 공간(ID: {res['room_id']})"
 
                 ci_status = " [입실완료]" if res.get("checked_in", False) else " [미입실]"
-                role_txt = "[방장]" if str(res["leader"]) == str(self.current_user) else f"[팀원]"
+                is_leader = str(res["leader"]) == str(self.current_user)
+                role_txt = "[방장]" if is_leader else f"[팀원]"
                 
                 tk.Label(sr_info_frame, text=f"{room_name}{ci_status} ({role_txt})", font=("맑은 고딕", 9, "bold"), bg="#f9f9f9", anchor="w").pack(fill="x")
                 tk.Label(sr_info_frame, text=f"▶ 예약 일시: {res['date']} ({res['time_slot']})", font=("맑은 고딕", 9), fg="#555", bg="#f9f9f9", anchor="w").pack(fill="x")
@@ -137,12 +139,19 @@ class MainApp(tk.Tk):
                 sr_btn_frame = tk.Frame(sr_frame, bg="#f9f9f9")
                 sr_btn_frame.pack(side="right", fill="y")
                 
-                tk.Button(sr_btn_frame, text="취소", bg="#f44336", fg="white", font=("맑은 고딕", 8), width=8,
-                          command=lambda r=res: self.cancel_study_room(r)).pack(side="bottom", pady=1)
-                
-                if not res.get("checked_in", False) and str(res["leader"]) == str(self.current_user):
-                    tk.Button(sr_btn_frame, text="코드 입력", bg="#e91e63", fg="white", font=("맑은 고딕", 8, "bold"), width=8,
-                              command=lambda r=res: self.checkin_study_room(r)).pack(side="bottom", pady=1)
+                # ---------------- [대시보드 권한 제어 수정] ----------------
+                # 방장인 경우에만 취소 및 코드 입력(인증) 버튼이 나타나도록 제한합니다.
+                if is_leader:
+                    tk.Button(sr_btn_frame, text="취소", bg="#f44336", fg="white", font=("맑은 고딕", 8), width=8,
+                              command=lambda r=res: self.cancel_study_room(r)).pack(side="bottom", pady=1)
+                    
+                    if not res.get("checked_in", False):
+                        tk.Button(sr_btn_frame, text="코드 입력", bg="#e91e63", fg="white", font=("맑은 고딕", 8, "bold"), width=8,
+                                  command=lambda r=res: self.checkin_study_room(r)).pack(side="bottom", pady=1)
+                else:
+                    # 팀원 화면에는 취소 버튼을 띄우지 않고 권한이 없음을 알리는 라벨을 띄우거나 비워둡니다.
+                    tk.Label(sr_btn_frame, text="취소 권한 없음", font=("맑은 고딕", 8), fg="gray", bg="#f9f9f9").pack(side="bottom", pady=5)
+                # ------------------------------------------------------------
         else:
             tk.Label(status_box, text="예약된 스터디룸 내역이 없습니다.", font=("맑은 고딕", 9), fg="gray").pack(anchor="w", padx=10, pady=5)
 
