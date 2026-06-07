@@ -20,16 +20,5 @@
         "time_slot": "11:00-12:00",
         "people_count": 2,
         "checked_in": false
-    },
-    {
-        "leader": "202110958",
-        "members": [
-            "202310958"
-        ],
-        "date": "2026-06-08",
-        "room_id": 8,
-        "time_slot": "14:00-15:00",
-        "people_count": 2,
-        "checked_in": false
     }
 ]

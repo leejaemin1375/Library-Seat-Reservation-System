@@ -15,7 +15,7 @@ STATUS_COLORS = {
     2: {"bg": "#F44336", "fg": "white"},  # 배정불가
 }
 
-# 기본 구조 테이블 (최초 1회 파일 생성용 데이터 테이블)
+# 기본 구조 테이블
 DEFAULT_READING_DATA = {
     "rooms_config": {
         "열람실1": {"total": 20, "seats": {str(i): f"R1-S{i:02d}" for i in range(1, 21)}},
@@ -50,7 +50,6 @@ def save_reading_data(data):
         except IOError:
             msgbox.showerror("파일 오류", "열람실 데이터를 저장하는 중 에러가 발생했습니다.")
 
-# 하위 호환 매핑용 함수들
 def load_rooms():
     return load_reading_data()["reservations"]
 
@@ -62,7 +61,6 @@ def save_rooms(new_reservations):
 def get_rooms_config():
     return load_reading_data()["rooms_config"]
 
-# main.py 임포트용 별칭
 load_reading_rooms = load_rooms
 save_reading_rooms = save_rooms
 
@@ -112,40 +110,33 @@ class ReadingRoomPage(tk.Frame):
                   command=self.on_back).pack(pady=20)
 
     def _make_room_card(self, room, used):
-        # 1. 카드 전체 컨테이너 스타일 개선 (둥근 모서리 느낌과 투명 테두리 추가)
         card = tk.Frame(self, relief="solid", bd=1, bg="white", highlightthickness=1, highlightbackground="#E0E0E0")
         card.pack(fill="x", padx=25, pady=6)
         
-        # 내부 여백 확보용 패딩 프레임
         pad_frame = tk.Frame(card, bg="white", padx=15, pady=10)
         pad_frame.pack(fill="both", expand=True)
 
-        # 2. 열람실 이름 (글씨 크기를 조금 키우고 세련된 색상 적용)
         tk.Label(pad_frame, text=room["name"], font=("맑은 고딕", 12, "bold"), bg="white", fg="#1A237E", anchor="w").pack(fill="x")
         
-        # 정보 출력을 위한 가로 프레임
         info_frame = tk.Frame(pad_frame, bg="white")
         info_frame.pack(fill="x", pady=(5, 0))
 
-        # 좌석 통계 계산
         total = room["total"]
         available = total - used # 잔여 좌석 계산
 
-        # 3. 실시간 이용 현황 수치 강조 텍스트
         stats_text = f"🟢 이용 가능: {available}석  /  🟣 사용 중: {used}석"
         tk.Label(info_frame, text=stats_text, font=("맑은 고딕", 9, "bold"), fg="#555555", bg="white").pack(side="left")
         
         ratio_text = f"({used}/{total}석)"
         tk.Label(info_frame, text=ratio_text, font=("Arial", 9), fg="#9E9E9E", bg="white").pack(side="right")
 
-        # 4. ★ 시각적인 잔여 좌석 진행률 바 (Progress Bar) 생성
-        progress_bg = tk.Frame(pad_frame, bg="#E0E0E0", height=8) # 회색 배경 바
+        # 시각적인 잔여 좌석 진행률 바 생성
+        progress_bg = tk.Frame(pad_frame, bg="#E0E0E0", height=8)
         progress_bg.pack(fill="x", pady=(8, 0))
-        progress_bg.pack_propagate(False) # 높이 고정
+        progress_bg.pack_propagate(False)
 
         if total > 0:
             fill_width_ratio = used / total
-            # 혼잡도에 따라 채워지는 색상 변경 (80% 이상 사용 시 경고색인 주황/빨강 계열 변환)
             if fill_width_ratio >= 0.8:
                 bar_color = "#E53935" # 만석 임박: 빨간색
             elif fill_width_ratio >= 0.5:
@@ -153,7 +144,6 @@ class ReadingRoomPage(tk.Frame):
             else:
                 bar_color = "#2196F3" # 여유: 파란색
 
-            # 비율만큼 채워지는 실제 게이지 바
             progress_bar = tk.Canvas(progress_bg, bg=bar_color, highlightthickness=0, height=8)
             progress_bar.place(relwidth=fill_width_ratio, relheight=1.0)
 
@@ -166,7 +156,6 @@ class ReadingRoomPage(tk.Frame):
         self.selected_room = room
         reservations = load_rooms().get(room["name"], {})
 
-        # ★ [추가] 로그인한 사용자가 현재 어떤 열람실이든 이미 예약된 좌석이 있는지 체크합니다.
         has_existing_reservation = False
         all_reservations = load_rooms()
         for r_n, seats in all_reservations.items():
@@ -209,11 +198,10 @@ class ReadingRoomPage(tk.Frame):
                 color = STATUS_COLORS[status]
                 tooltip = reservations[str(i)]["end_time"].split()[-1] if status == 1 else str(i)
 
-                # ★ [변경] 만약 배정가능(0)인데 이미 사용자가 예약이 있다면 '자리이동 선택(주황색)' 색상으로 변경
                 btn_bg = color["bg"]
                 btn_fg = color["fg"]
                 if status == 0 and has_existing_reservation:
-                    btn_bg = "#FF9800"  # 주황색 범위 지정 가능
+                    btn_bg = "#FF9800"
                     btn_fg = "white"
 
                 btn = tk.Button(canvas, text=tooltip, width=4, height=1, bg=btn_bg, fg=btn_fg,
@@ -249,7 +237,6 @@ class ReadingRoomPage(tk.Frame):
                 color = STATUS_COLORS[status]
                 tooltip = reservations[str(i)]["end_time"].split()[-1] if status == 1 else str(i)
 
-                # ★ [변경] 만약 배정가능(0)인데 이미 사용자가 예약이 있다면 '자리이동 선택' 색상으로 변경
                 btn_bg = color["bg"]
                 btn_fg = color["fg"]
                 if status == 0 and has_existing_reservation:
@@ -285,7 +272,6 @@ class ReadingRoomPage(tk.Frame):
                 color = STATUS_COLORS[status]
                 tooltip = reservations[str(i)]["end_time"].split()[-1] if status == 1 else str(i)
 
-                # ★ [변경] 만약 배정가능(0)인데 이미 사용자가 예약이 있다면 '자리이동 선택' 색상으로 변경
                 btn_bg = color["bg"]
                 btn_fg = color["fg"]
                 if status == 0 and has_existing_reservation:
@@ -312,14 +298,11 @@ class ReadingRoomPage(tk.Frame):
         canvas.update_idletasks()
         canvas.configure(scrollregion=canvas.bbox("all"))
 
-        # ★ [변경] 범례 생성 프레임 영역 수정
         legend_frame = tk.Frame(self)
         legend_frame.pack(pady=8)
         
-        # 기본 범례 리스트 구성
         legends = [("배정가능", "#4CAF50"), ("사용중", "#9C27B0")]
         
-        # 사용자가 이미 예약을 보유하고 있다면 범례에 '자리이동' 항목 추가
         if has_existing_reservation:
             legends.append(("자리이동", "#FF9800"))
 
@@ -359,13 +342,13 @@ class ReadingRoomPage(tk.Frame):
         if old_room in rooms_reservations and old_seat in rooms_reservations[old_room]:
             del rooms_reservations[old_room][old_seat]
             
-        # 2. 새 좌석 저장 (booked_at 필수 추가!)
+        # 2. 새 좌석 저장
         new_room_name = self.selected_room["name"]
         now_dt = datetime.now() # 자리이동한 시점을 새로운 예약 시작 시점으로 설정
         
         rooms_reservations[new_room_name][str(new_seat)] = {
             "user": self.user,
-            "booked_at": now_dt.strftime("%Y-%m-%d %H:%M"), # ◀ 이 부분이 핵심 보완점입니다.
+            "booked_at": now_dt.strftime("%Y-%m-%d %H:%M"),
             "end_time": end_time,
             "checked_in": False
         }
@@ -375,10 +358,8 @@ class ReadingRoomPage(tk.Frame):
                                         f"※ 해당 자리 책상 위에 붙은 고유 인증코드를 "
                                         f"10분 내로 마이페이지에서 입력해야 예약이 자동 취소되지 않습니다.")
         
-        # 3. 콜백 함수(on_back)를 호출하여 마이페이지로 이동하며 화면을 갱신합니다.
         self.on_back()
 
-    # reading_room.py 복사용 주요 변경 로직
     def reserve(self, seat_num):
         rooms_reservations = load_rooms()
         room_name = self.selected_room["name"]

@@ -78,9 +78,7 @@ class StudyRoomPage(tk.Frame):
         tk.Label(self, text="스터디룸 예약 시스템", font=("맑은 고딕", 22, "bold")).pack(pady=25)
         tk.Label(self, text=f"현재 로그인 사용자: {self.user}", font=("맑은 고딕", 12)).pack(pady=5)
         tk.Label(self, text="예약할 날짜를 선택하세요.", font=("맑은 고딕", 15)).pack(pady=20)
-        
-        # [내 예약 조회 / 취소] 버튼 코드가 있던 자리를 제거했습니다.
-        
+                
         frame = tk.Frame(self)
         frame.pack(pady=10)
         tk.Label(frame, text="날짜 입력:", font=("맑은 고딕", 12)).pack(side="left")
@@ -161,7 +159,6 @@ class StudyRoomPage(tk.Frame):
             btn.config(command=lambda s=slot, b=btn: self.reserve_room(date, room_id, s, b))
             btn.grid(row=index // 4, column=index % 4, padx=6, pady=6)
 
-        # 1. '선택한 시간 예약하기' 버튼 프레임 (상단 독점)
         reserve_btn_frame = tk.Frame(self)
         reserve_btn_frame.pack(pady=(15, 5))
         
@@ -169,7 +166,6 @@ class StudyRoomPage(tk.Frame):
                   bg="#4CAF50", fg="white", width=40, height=2,
                   command=lambda: self.process_final_reservation(date, room_id)).pack()
 
-        # 2. 나머지 내비게이션 버튼 프레임 (하단 가로 정렬)
         navigation_frame = tk.Frame(self)
         navigation_frame.pack(pady=(5, 15))
         

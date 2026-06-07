@@ -48,7 +48,7 @@ def is_user_banned(student_id):
             if datetime.now() < ban_dt:
                 return True, info["ban_until"]
             else:
-                # 3일이 지나면 패널티 초기화 리셋
+                # 3일이 지나면 패널티 리셋
                 penalties[student_id] = {"count": 0, "ban_until": None}
                 save_penalties(penalties)
     return False, None
@@ -94,9 +94,11 @@ class MainApp(tk.Tk):
         
         tk.Label(header_frame, text=f"{self.current_user}님, 환영합니다!", font=("맑은 고딕", 12, "bold")).pack(side="left")
         tk.Button(header_frame, text="로그아웃", bg="#757575", fg="white", font=("맑은 고딕", 9),
-                  command=self.show_login_page).pack(side="right")
+                  command=self.show_login_page).pack(side="right", padx=(5, 0))
+        tk.Button(header_frame, text="회원탈퇴", bg="#d32f2f", fg="white", font=("맑은 고딕", 9),
+                  command=self.delete_account).pack(side="right")
 
-        # [패널티 실시간 대시보드 출력 상자]
+        # 패널티 실시간 대시보드 출력 상자
         p_data = load_penalties().get(self.current_user, {"count": 0, "ban_until": None})
         p_count = p_data["count"]
         p_ban = p_data["ban_until"]
@@ -159,7 +161,7 @@ class MainApp(tk.Tk):
         else:
             tk.Label(status_box, text="예약된 열람실 좌석이 없습니다.", font=("맑은 고딕", 9), fg="gray").pack(anchor="w", padx=10, pady=5)
 
-        # 2. 스터디룸 현황 파싱
+        # 스터디룸 현황 파싱
         tk.Label(status_box, text="■ 스터디룸 현황", font=("맑은 고딕", 10, "bold"), fg="#2196F3").pack(anchor="w", pady=(10, 2))
         current_sr_list = load_study_reservations()
         sr_booked = [res for res in current_sr_list if str(res["leader"]) == str(self.current_user) or str(self.current_user) in [str(m) for m in res["members"]]]
@@ -190,7 +192,6 @@ class MainApp(tk.Tk):
                               command=lambda r=res: self.cancel_study_room(r)).pack(side="bottom", pady=1)
                     
                     if not res.get("checked_in", False):
-                        # 스터디룸 입실시간 정각 ~ 입실시간+10분 사이일 때만 활성화 검사
                         start_hour = int(res["time_slot"].split("-")[0].split(":")[0])
                         start_dt = datetime.strptime(f"{res['date']} {start_hour:02d}:00", "%Y-%m-%d %H:%M")
                         if start_dt <= datetime.now() <= (start_dt + timedelta(minutes=10)):
@@ -301,6 +302,62 @@ class MainApp(tk.Tk):
             save_study_reservations(updated)
             messagebox.showinfo("취소 성공", "예약이 정상적으로 취소되었습니다.")
             self.show_mypage()
+    
+    def delete_account(self):
+        """회원 탈퇴 기능을 수행합니다. 조건에 따른 제약 및 연동 처리를 포함합니다."""
+        if not messagebox.askyesno("회원 탈퇴", "정말 탈퇴하시겠습니까?\n탈퇴 후에는 계정을 복구할 수 없습니다."):
+            return
+
+        # 스터디룸 예약 확인 (방장 또는 팀원으로 참여한 실시간 예약이 있는지 검사)
+        current_sr_list = load_study_reservations()
+        sr_booked = [
+            res for res in current_sr_list 
+            if str(res["leader"]) == str(self.current_user) or str(self.current_user) in [str(m) for m in res["members"]]
+        ]
+        
+        if sr_booked:
+            messagebox.showerror(
+                "탈퇴 불가", 
+                "현재 예약된 스터디룸 내역(방장 혹은 팀원)이 존재하여 탈퇴할 수 없습니다.\n"
+                "모든 스터디룸 이용이 끝나거나 예약이 취소된 후 다시 시도해주세요."
+            )
+            return
+
+        # 열람실 예약 확인 및 즉시 반납 처리
+        rr_data = load_reading_rooms()
+        rr_changed = False
+        
+        for room_name, seats_map in list(rr_data.items()):
+            for seat_num, s_info in list(seats_map.items()):
+                if s_info.get("user") == self.current_user:
+                    # 현재 시간 기준으로 종료되지 않은 유효한 예약인 경우 즉시 반납
+                    if datetime.now() < datetime.strptime(s_info["end_time"], "%Y-%m-%d %H:%M"):
+                        del rr_data[room_name][seat_num]
+                        rr_changed = True
+                        break
+        
+        if rr_changed:
+            save_reading_rooms(rr_data)
+
+        # 패널티 정보 삭제 (선택 사항: 탈퇴하는 회원의 패널티 데이터 정리)
+        from main import load_penalties, save_penalties
+        penalties = load_penalties()
+        if self.current_user in penalties:
+            del penalties[self.current_user]
+            save_penalties(penalties)
+
+        # users.json에서 사용자 계정 정보 삭제
+        from login_2 import load_users, save_users
+        users = load_users()
+        if self.current_user in users:
+            del users[self.current_user]
+            save_users(users)
+            
+            messagebox.showinfo("탈퇴 완료", "회원 탈퇴가 정상적으로 처리되었습니다.\n로그인 화면으로 이동합니다.")
+            self.current_user = None
+            self.show_login_page()
+        else:
+            messagebox.showerror("오류", "사용자 정보를 찾을 수 없습니다.")
 
     def auto_cancel_no_show(self):
         """실시간 노쇼를 감지하여 10분이 지나면 예약 취소 및 자동 패널티를 부여하는 핵심 백그라운드 엔진"""
@@ -308,7 +365,7 @@ class MainApp(tk.Tk):
         rr_changed = False
         sr_changed = False
 
-        # 1. 열람실 감시 및 패널티 부과 (예약 후 10분 경과 미인증 자동 폭파)
+        # 열람실 감시 및 패널티 부과
         try:
             rr_data = load_reading_rooms()
             for room_name, seats_map in list(rr_data.items()):
@@ -329,7 +386,7 @@ class MainApp(tk.Tk):
         except Exception:
             pass
 
-        # 2. 스터디룸 감시 및 패널티 부과 (입실 시간 + 10분 경과 미입실 자동 폭파)
+        # 스터디룸 감시 및 패널티 부과
         try:
             sr_data = load_study_reservations()
             updated_sr = []
@@ -340,7 +397,7 @@ class MainApp(tk.Tk):
                     
                     if now > (start_dt + timedelta(minutes=10)) and not res.get("checked_in", False):
                         sr_changed = True
-                        add_penalty(res["leader"]) # 방장에게 폭탄 투하
+                        add_penalty(res["leader"])
                         continue
                 except:
                     pass
